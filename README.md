@@ -46,6 +46,10 @@ uv run python evals/run_consistency.py
 
 The schema is 0.x and may change. Framework ids marked † in `references/crosswalk.md` still need to be checked against the pinned editions.
 
+## Author
+
+Jautau White
+
 ## License
 
-Apache 2.0
+Apache 2.0. Copyright 2026 Jautau White.
