@@ -1,0 +1,255 @@
+{
+  "schema_version": "0.3.0",
+  "assessment": {
+    "assessment_id": "ex-0001",
+    "assessed_at": "2026-09-25T00:00:00Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.2.0",
+      "rubric_version": "0.2.0"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "examples/support_agent/prompt.md"
+      },
+      {
+        "artifact_type": "mcp_config",
+        "locator": "examples/support_agent/mcp.json"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "support-triage",
+    "name": "Customer Support Triage Agent",
+    "trust_domain": "first_party",
+    "model": {
+      "provider": "example",
+      "name": "example-model",
+      "swappable": true
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.crm_read",
+      "tool_ref": "crm_mcp.get_customer",
+      "action": "read",
+      "target": "CRM customer records",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.email_send",
+      "tool_ref": "mail_mcp.send",
+      "action": "send_external",
+      "target": "Outbound email",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.inbound_email",
+      "source": "Customer email body",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.crm_read",
+        "cap.email_send"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md line 14",
+      "severity": "high",
+      "note": "Only barrier to sending records externally is an instruction not to share other customers' data."
+    }
+  ],
+  "protocols": [
+    {
+      "protocol": "mcp",
+      "peer_ref": "mail_mcp",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "internal"
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.prompt_rule",
+      "name": "Prompt rule against sharing other customers' data",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Relies on the model resisting injected instructions; stronger models follow complex injected goals more competently.",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctl.send_log",
+      "name": "Outbound email logging",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "declared",
+      "maestro_layer": "L5_evaluation_observability"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f.exfil_via_email",
+      "title": "Untrusted email can direct the agent to read CRM records and email them to an attacker",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.inbound_email",
+          "note": "Injected instruction in customer email"
+        },
+        {
+          "ref": "cap.crm_read",
+          "note": "Broad read of other customers"
+        },
+        {
+          "ref": "cap.email_send",
+          "note": "Egress with no approval gate"
+        }
+      ],
+      "toxic_combination": [
+        "in.inbound_email",
+        "cap.crm_read",
+        "cap.email_send"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "framework_edition": "2026",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "framework_edition": "v5.4.0",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation"
+        },
+        {
+          "framework": "OWASP_LLM_TOP10",
+          "framework_edition": "2025",
+          "id": "LLM01",
+          "name": "Prompt Injection"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [
+          "ctl.prompt_rule"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Model version change or increase in steps per ticket"
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "mcp.json",
+          "observation": "mail_mcp.send available with no approval requirement"
+        },
+        {
+          "locator": "prompt.md line 14",
+          "observation": "Protection against disclosure is instruction only"
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require human approval for any outbound email to an address not on the ticket record.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Scope CRM credential to the requesting customer's record only.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "information_disclosure",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L1_foundation_models",
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "likelihood": "likely",
+      "consequence": "major",
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "note": "Security and resilience evaluated and documented"
+        },
+        {
+          "framework": "ISO_42001",
+          "framework_edition": "2023",
+          "id": "8.2"
+        }
+      ],
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Complete exfiltration path exists today; the only preventive control is behavioral and decays with capability."
+  },
+  "composition": {
+    "accepts_tasks_from": [],
+    "delegates_to": [],
+    "output_consumers": [
+      "billing-agent"
+    ],
+    "approval_context_propagates": false
+  },
+  "limitations": [
+    "Assessment reflects declared design and configuration, not observed runtime behavior."
+  ]
+}
