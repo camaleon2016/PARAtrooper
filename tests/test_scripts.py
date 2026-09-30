@@ -392,3 +392,28 @@ def test_staged_v040_cases_are_consistent(tmp_path, monkeypatch):
     for exp_path in sorted((fake / "expected").glob("*.expected.json")):
         problems += check_cases.check_case(exp_path)
     assert problems == []
+
+
+def test_run_skill_truncation_resume_and_metadata(tmp_path, monkeypatch):
+    import run_skill  # pylint: disable=import-outside-toplevel
+    good = EXAMPLE.read_text(encoding="utf-8")
+    replies = iter([
+        (good[:500], {"stop_reason": "max_tokens", "output_tokens": 32000}),
+        (good, {"stop_reason": "end_turn", "output_tokens": 9000}),
+    ])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(run_skill, "RUNS", tmp_path)
+    monkeypatch.setattr(run_skill, "call_model", lambda *a, **k: next(replies))
+    args = ["--model", "test-model", "--case", "01_support_triage", "--runs", "1", "--resume"]
+
+    run_skill.main(args)
+    out = tmp_path / "01_support_triage" / "run_000.json"
+    assert "truncated" in json.loads(out.read_text(encoding="utf-8"))["_parse_error"]
+    assert not run_skill.completed(out)
+
+    run_skill.main(args)  # --resume redoes the failed run instead of skipping it
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert run_skill.completed(out)
+    assessor = doc["assessment"]["assessor"]
+    assert assessor["model"] == "test-model" and assessor["version"] == run_skill.skill_version()
+    assert doc["assessment"]["assessed_at"].endswith("Z")

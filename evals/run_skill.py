@@ -136,6 +136,35 @@ def call_model(  # pylint: disable=too-many-arguments,too-many-positional-argume
     return text, meta
 
 
+def completed(out: Path) -> bool:
+    """True when a run file holds a parsed assessment. Failed runs are redone by --resume."""
+    try:
+        doc = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    return isinstance(doc, dict) and "_parse_error" not in doc
+
+
+def stamp_metadata(doc: dict, started: dt.datetime, model: str) -> None:
+    """Overwrite run metadata the model cannot know, so it never invents dates or versions.
+    Judgment fields are never touched."""
+    assessment = doc.get("assessment")
+    if not isinstance(assessment, dict):
+        return
+    assessment["assessed_at"] = started.isoformat(timespec="seconds").replace("+00:00", "Z")
+    assessor = assessment.get("assessor")
+    if isinstance(assessor, dict):
+        assessor["kind"] = "skill"
+        assessor["version"] = skill_version()
+        assessor["model"] = model
+        assessor["rubric_version"] = rubric_version()
+
+
+def skill_version() -> str:
+    match = re.search(r'^version = "([^"]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"), re.MULTILINE)
+    return match.group(1) if match else "unknown"
+
+
 def select_cases(case_id: str | None) -> list[Path]:
     cases = sorted((EVALS / "cases").glob("*.md"))
     if case_id:
@@ -148,7 +177,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--model", help="Claude model id to run the skill with")
     ap.add_argument("--case", help="one case_id; default is every case")
     ap.add_argument("--runs", type=int, default=5)
-    ap.add_argument("--max-tokens", type=int, default=16000)
+    ap.add_argument("--max-tokens", type=int, default=32000,
+                    help="covers the model's reasoning plus the JSON; raise it if runs report truncation")
     ap.add_argument("--temperature", type=float, help="default is the API default, which is how the skill runs in practice")
     ap.add_argument("--resume", action="store_true", help="skip run numbers that already have output")
     ap.add_argument("--dry-run", action="store_true", help="print prompt sizes and exit")
@@ -194,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         for i in range(args.runs):
             out = out_dir / f"run_{i:03d}.json"
-            if args.resume and out.exists():
+            if args.resume and completed(out):
                 continue
             run_id = f"{case.stem}-run{i:03d}"
             text, meta = "", {}
@@ -202,13 +232,16 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 text, meta = call_model(client, args.model, system, build_user_message(case, run_id),
                                         args.max_tokens, args.temperature)
+                if meta.get("stop_reason") == "max_tokens":
+                    raise ValueError(f"output truncated at --max-tokens {args.max_tokens}; raise it and rerun")
                 doc = extract_json(text)
+                stamp_metadata(doc, started, args.model)
                 errors, warnings = check(doc, schema)
                 status = f"{len(errors)} errors, {len(warnings)} warnings"
             except (ValueError, json.JSONDecodeError) as exc:
                 doc = {"_parse_error": str(exc)}
                 (out_dir / f"run_{i:03d}.raw.txt").write_text(text, encoding="utf-8")
-                status = "unparseable output"
+                status = f"unparseable output ({exc})"
                 failures += 1
             except anthropic.APIError as exc:
                 doc = {"_parse_error": f"api error: {exc}"}
