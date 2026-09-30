@@ -2,7 +2,7 @@
 
 PARA performs parts of NIST AI RMF MAP and MEASURE. It produces inputs for MANAGE, and it records GOVERN facts. For ISO/IEC 42001, it is a candidate 6.1.2 methodology and it produces 8.2 records.
 
-Clause and subcategory ids marked † must be checked against the edition in use before release.
+Clause, Annex A, and subcategory ids here were checked against ISO/IEC 42001:2023 and NIST AI RMF 1.0. Recheck them when either edition changes.
 
 ## NIST AI RMF 1.0
 

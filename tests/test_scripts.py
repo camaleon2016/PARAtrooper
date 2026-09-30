@@ -298,3 +298,97 @@ def test_evidence_substring_and_forecast_minimum_scoring():
     assert result["recall"] == 0.5
     # The example's present finding has residual high, which counts as a false positive here.
     assert result["false_positives"] == 1
+
+
+def test_assessor_view_hides_evaluator_notes():
+    import run_skill  # pylint: disable=import-outside-toplevel
+    for case in sorted((ROOT / "evals" / "cases").glob("*.md")):
+        view = run_skill.assessor_view(case.read_text(encoding="utf-8"))
+        for leak in ("Kind:", "Source:", "What happened", "backtest", "Backtest", "reconstruct", "(vulnerable", "(edge"):
+            assert leak not in view, f"{case.name} leaks '{leak}' to the assessor"
+        assert "## Stable ids" in view
+
+
+def test_extract_json_tolerates_fences_and_rejects_prose():
+    import run_skill  # pylint: disable=import-outside-toplevel
+    assert run_skill.extract_json('```json\n{"a": 1}\n```') == {"a": 1}
+    assert run_skill.extract_json('Here you go: {"a": 1} done') == {"a": 1}
+    try:
+        run_skill.extract_json("no json here")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_pinned_id_lists_reject_retired_atlas_id():
+    atlas = check_cases.load_ids("atlas_ids_2026.09.tsv")
+    assert "AML.T0104" not in atlas
+    assert {"AML.T0086", "AML.T0115.002", "AML.T0118"} <= atlas
+    assert check_cases.check_framework_ids() == []
+
+
+def test_broken_run_file_scores_as_invalid(tmp_path):
+    exp = json.loads((ROOT / "evals" / "expected" / "01_support_triage.expected.json").read_text(encoding="utf-8"))
+    bad = tmp_path / "run_000.json"
+    bad.write_text('{"_parse_error": "no json"}', encoding="utf-8")
+    assert run_consistency.score_file(bad, exp, SCHEMA)["valid"] is False
+    broken = tmp_path / "run_001.json"
+    broken.write_text('{"findings": [{"attack_path": [{}]}]}', encoding="utf-8")
+    result = run_consistency.score_file(broken, exp, SCHEMA)
+    assert result["valid"] is False
+
+
+def test_markdown_report_renders_backtests():
+    results = [run_consistency.score_run(example(), json.loads(
+        (ROOT / "evals" / "expected" / "01_support_triage.expected.json").read_text(encoding="utf-8")), SCHEMA)]
+    stats = {"10_backtest_github_mcp": run_consistency.case_stats(results)}
+    text = run_consistency.markdown_report(stats, {"10_backtest_github_mcp": "backtest"}, {"model": "test"})
+    assert "| 10_backtest_github_mcp | backtest | 1 |" in text
+    assert "Backtests" in text
+
+
+def test_run_skill_end_to_end_with_stubbed_model(tmp_path, monkeypatch):
+    import run_skill  # pylint: disable=import-outside-toplevel
+    replies = iter([EXAMPLE.read_text(encoding="utf-8"), "I refuse to answer in JSON."])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(run_skill, "RUNS", tmp_path)
+    monkeypatch.setattr(run_skill, "call_model", lambda *a, **k: (next(replies), {"output_tokens": 10}))
+    assert run_skill.main(["--model", "test-model", "--case", "01_support_triage", "--runs", "2"]) == 0
+    good = json.loads((tmp_path / "01_support_triage" / "run_000.json").read_text(encoding="utf-8"))
+    bad = json.loads((tmp_path / "01_support_triage" / "run_001.json").read_text(encoding="utf-8"))
+    assert good["subject"]["agent_id"] == "support-triage"
+    assert "_parse_error" in bad
+    assert (tmp_path / "01_support_triage" / "run_001.raw.txt").exists()
+    meta = json.loads((tmp_path / "01_support_triage" / "run_000.meta.json").read_text(encoding="utf-8"))
+    assert meta["output_tokens"] == 10 and "seconds" in meta
+    assert [p.name for p in sorted((tmp_path / "01_support_triage").glob(run_consistency.RUN_GLOB))] == [
+        "run_000.json", "run_001.json"]
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["model"] == "test-model" and manifest["rubric_version"] == "0.2.0"
+
+
+def test_required_stride_categories_scoring():
+    exp = {
+        "kind": "coverage",
+        "rating": {"inherent": ["critical"], "residual": ["high"], "forecast": ["critical"]},
+        "required_stride_categories": ["information_disclosure", "repudiation"],
+    }
+    # The example finding is labeled information_disclosure and elevation_of_privilege, not repudiation.
+    assert run_consistency.score_run(example(), exp, SCHEMA)["recall"] == 0.5
+
+
+def test_staged_v040_cases_are_consistent(tmp_path, monkeypatch):
+    # The staged cases must pass the same checks as live ones once moved into evals/.
+    staged = ROOT / "design" / "0.4.0"
+    fake = tmp_path / "evals"
+    (fake / "cases").mkdir(parents=True)
+    (fake / "expected").mkdir()
+    for sub in ("cases", "expected"):
+        for f in (staged / sub).iterdir():
+            (fake / sub / f.name).write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(check_cases, "EVALS", fake)
+    problems = []
+    for exp_path in sorted((fake / "expected").glob("*.expected.json")):
+        problems += check_cases.check_case(exp_path)
+    assert problems == []
