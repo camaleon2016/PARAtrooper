@@ -4,7 +4,8 @@ Usage: python evals/check_cases.py
 Exit code 0 = consistent, 1 = problems found.
 
 This does not run the skill. It catches drift: an expected file that names an id the case never
-defines, a trigger or tier the schema does not allow, or a case with no expected file.
+defines, a trigger or tier the schema does not allow, a case with no expected file, or a MITRE ATLAS
+or SAFE-MCP id that does not exist in the pinned edition under references/data/.
 """
 
 from __future__ import annotations
@@ -19,9 +20,35 @@ EVALS = ROOT / "evals"
 SCHEMA = json.loads((ROOT / "schema" / "assessment.schema.json").read_text(encoding="utf-8"))
 TIERS = set(SCHEMA["$defs"]["tier"]["enum"])
 TRIGGERS = set(SCHEMA["$defs"]["forecast_trigger"]["enum"])
-KINDS = {"vulnerable", "clean", "edge", "forecast", "backtest"}
+KINDS = {"vulnerable", "clean", "edge", "forecast", "backtest", "coverage"}
+STRIDE = set(SCHEMA["$defs"]["stride"]["enum"])
 ASI_ID = re.compile(r"^ASI(0[1-9]|10)$")
 FIELDS = ("inherent", "residual", "forecast")
+DATA = ROOT / "references" / "data"
+ATLAS_ID = re.compile(r"\bAML\.T\d{4}(?:\.\d{3})?\b")
+SAFE_ID = re.compile(r"\bSAFE-T\d{4}(?:\.\d{3})?\b")
+# Files whose framework ids must exist in the pinned editions. The CHANGELOG is exempt because it
+# records retired ids on purpose.
+ID_SCAN = ["references/*.md", "examples/*.json", "evals/cases/*.md", "evals/expected/*.json", "SKILL.md"]
+
+
+def load_ids(name: str) -> set[str]:
+    lines = (DATA / name).read_text(encoding="utf-8").splitlines()
+    return {line.split("\t", 1)[0] for line in lines if line and not line.startswith("#")}
+
+
+def check_framework_ids() -> list[str]:
+    """Every ATLAS and SAFE-MCP id cited in the repo must exist in the pinned edition."""
+    atlas, safe = load_ids("atlas_ids_2026.09.tsv"), load_ids("safe_mcp_ids.tsv")
+    retired_note = "formerly AML.T0104"
+    problems: list[str] = []
+    for pattern in ID_SCAN:
+        for path in sorted(ROOT.glob(pattern)):
+            text = path.read_text(encoding="utf-8").replace(retired_note, "")
+            rel = path.relative_to(ROOT).as_posix()
+            problems += [f"{rel}: {i} not in ATLAS 2026.09" for i in sorted(set(ATLAS_ID.findall(text)) - atlas)]
+            problems += [f"{rel}: {i} not in pinned SAFE-MCP catalog" for i in sorted(set(SAFE_ID.findall(text)) - safe)]
+    return problems
 
 
 def stable_ids(case_text: str) -> set[str]:
@@ -62,6 +89,9 @@ def check_case(exp_path: Path) -> list[str]:
     for trig in exp.get("required_triggers", []):
         if trig not in TRIGGERS:
             problems.append(f"{where}: trigger '{trig}' is not in the schema's forecast_trigger enum")
+    for cat in exp.get("required_stride_categories", []):
+        if cat not in STRIDE:
+            problems.append(f"{where}: STRIDE category '{cat}' is not in the schema's stride enum")
     threshold = exp.get("false_positive_threshold")
     if threshold is not None and threshold not in TIERS:
         problems.append(f"{where}: false_positive_threshold '{threshold}' is not a tier")
@@ -77,6 +107,7 @@ def main() -> int:
     for case_path in sorted((EVALS / "cases").glob("*.md")):
         if case_path.stem not in covered:
             problems.append(f"{case_path.name}: no expected file")
+    problems += check_framework_ids()
     for p in problems:
         print(f"ERROR   {p}")
     print(f"{'OK' if not problems else 'FAILED'}: {len(expected)} cases checked, {len(problems)} problems")

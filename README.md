@@ -1,5 +1,8 @@
 # PARA: Preemptive Agent Risk Assessment
 
+[![CI](https://github.com/camaleon2016/PARAtrooper/actions/workflows/ci.yml/badge.svg)](https://github.com/camaleon2016/PARAtrooper/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/camaleon2016/PARAtrooper/badge)](https://scorecard.dev/viewer/?uri=github.com/camaleon2016/PARAtrooper)
+
 PARA rates AI agent designs at design time on three horizons:
 
 | Horizon | Question it answers |
@@ -29,33 +32,49 @@ evals/                   11 cases (vulnerable, clean, edge, forecast only,
                          assessor injection, and 2 public incident backtests),
                          expected results, consistency scoring, case checker
 tests/                   pytest suite for the scripts and eval tooling
+design/                  proposals for upcoming releases, with staged eval cases
 ```
 
 ## Quick start
 
-```powershell
-uv sync
-uv run python scripts/validate.py examples/support_agent.assessment.json
-uv run python scripts/render_report.py examples/support_agent.assessment.json --view both
-```
-
-Evals: save N skill outputs for a case under `evals/runs/<case_id>/`, then run:
+Requires Python 3.10 or later. From the repository root (Windows PowerShell shown; use `python3` and `/` paths elsewhere):
 
 ```powershell
-uv run python evals/run_consistency.py
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+.\.venv\Scripts\python.exe scripts\validate.py examples\support_agent.assessment.json
+.\.venv\Scripts\python.exe scripts\render_report.py examples\support_agent.assessment.json --view both
 ```
 
 Checks that run in CI on every push and pull request:
 
 ```powershell
-uv run pytest -q
-uv run python scripts/validate.py examples/support_agent.assessment.json --strict
-uv run python evals/check_cases.py
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe scripts\validate.py examples\support_agent.assessment.json --strict
+.\.venv\Scripts\python.exe evals\check_cases.py
 ```
+
+## Evals
+
+`evals/run_skill.py` runs the skill against every case through the Claude API. Evaluator notes (what a case tests, incident sources) are stripped before the model sees a case, so they cannot leak the expected answer. `evals/run_consistency.py` then scores recall, schema validity, false positives, and run to run agreement, and writes a publishable summary.
+
+```powershell
+$env:ANTHROPIC_API_KEY = "<your key>"
+.\.venv\Scripts\python.exe evals\run_skill.py --model <model id> --runs 5
+.\.venv\Scripts\python.exe evals\run_consistency.py --report evals\RESULTS.md
+```
+
+Run outputs in `evals/runs/` are committed with each published result so reviewers can audit them.
+
+## Results
+
+Results for the current release are in [evals/RESULTS.md](evals/RESULTS.md), including the two public incident backtests: would PARA, run before the incident, have named the attack path and the control that failed.
 
 ## Status
 
-The schema is 0.x and may change; see [CHANGELOG.md](CHANGELOG.md). Framework ids marked † in `references/crosswalk.md` still need to be checked against the pinned editions, and the SAFE-MCP rows need to be completed from the SAFE-MCP repository.
+The schema is 0.x and may change; see [CHANGELOG.md](CHANGELOG.md). MITRE ATLAS (2026.09) and SAFE-MCP ids are pinned and checked in CI. ISO/IEC 42001 clause and Annex A ids in `references/crosswalk.md` are checked against the licensed standard.
+
+Security issues: see [SECURITY.md](SECURITY.md).
 
 ## Author
 

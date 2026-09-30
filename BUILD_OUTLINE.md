@@ -173,9 +173,9 @@ The LLM handles judgment (instruction review, control classification, finding na
 
 The output is a ranked map of exploitable trust paths. Protect it like a penetration test report: access control on results, encryption at rest, retention limits, and no findings in logs.
 
-## Status (0.2.0)
+## Status (0.3.0 in progress)
 
-Phase one milestones 1 to 3 are complete. Milestone 4 has 11 eval cases, including 2 public incident backtests; the next step is collecting real skill runs under `evals/runs/` and measuring consistency. Milestone 5 (community release) is next.
+Phase one milestones 1 to 3 are complete. Milestone 4 has 11 eval cases, including 2 public incident backtests, and an API harness (`evals/run_skill.py`) to produce and score runs. Milestone 5 (v0.3.0 public release) is in progress: publish eval results, make the repository public, and enable Scorecard.
 
 ## Open decisions
 
