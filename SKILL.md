@@ -63,7 +63,7 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 
 ### 8. Find attack paths
 
-Load `references/toxic_combinations.md` and follow its search procedure. Then load `references/stride_agentic.md` and run STRIDE per element on the agent, its stores, and its connections. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`.
+Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Then load `references/stride_agentic.md` and run STRIDE per element on the agent, its stores, and its connections. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`.
 
 ### 9. Compute tiers
 

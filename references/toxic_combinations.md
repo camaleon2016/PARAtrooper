@@ -1,6 +1,8 @@
 # Toxic Combinations
 
-A toxic combination is a set of elements that are each acceptable alone but risky together. Record the ids in `toxic_combination` and the ordered chain in `attack_path`.
+A toxic combination is a set of elements that are each acceptable alone but risky together. Record the ordered chain in `attack_path`.
+
+**`toxic_combination` holds element ids from the assessed document** (`input_id`, `capability_id`, `control_id`), for example `["in.inbound_email", "cap.crm_read", "cap.email_send"]`. It never holds pattern ids such as `TC1`; the validator rejects any id that is not defined in the document. Name the pattern in the finding title instead, for example "Lethal trifecta (TC1): ..."
 
 ## Core patterns
 
