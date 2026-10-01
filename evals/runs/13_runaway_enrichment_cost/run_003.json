@@ -1,0 +1,404 @@
+{
+  "schema_version": "0.3.0",
+  "assessment": {
+    "assessment_id": "13_runaway_enrichment_cost-run003",
+    "assessed_at": "2026-09-30T23:11:24Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.2.0",
+      "rubric_version": "0.2.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "enrichment-agent",
+    "name": "Enrichment Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.enrich_lookup",
+      "tool_ref": "enrich.lookup",
+      "action": "spend",
+      "target": "Paid third-party enrichment API, billed per call",
+      "data_sensitivity": "internal",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.spawn_researcher",
+      "tool_ref": "spawn_researcher",
+      "action": "delegate",
+      "target": "Researcher sub agent that investigates an account and can itself spawn further researchers",
+      "data_sensitivity": "internal",
+      "reversibility": "irreversible",
+      "is_egress": false,
+      "credential_scope": "unknown",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.crm_write",
+      "tool_ref": "crm_write",
+      "action": "write",
+      "target": "CRM account fields: industry, size, headquarters",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "unknown",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.crm_rows",
+      "source": "Nightly batch of CRM account rows (40,000 rows; ~3% have malformed company names that never return a complete lookup result)",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": true,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:2-3",
+      "severity": "critical",
+      "note": "'Retry, or spawn a researcher sub agent... Keep going until every row is complete' gives no stop condition. Combined with rows that are structurally incapable of ever completing (malformed company names), this guarantees an unbounded retry and spawn loop rather than an occasional one."
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.max_steps_limit",
+      "name": "Maximum unattended steps / runtime limit on the nightly batch job",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A hard step/runtime ceiling enforced by the orchestrator does not depend on model behavior.",
+      "covers": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.spawn_depth_limit",
+      "name": "Sub-agent spawn depth and concurrent-count limit",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by the spawning mechanism itself, not by model compliance.",
+      "covers": [
+        "cap.spawn_researcher"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.spend_cap",
+      "name": "Per-run and monthly spend cap on the enrichment API key",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A hard cap enforced by the billing/API layer holds regardless of model capability.",
+      "covers": [
+        "cap.enrich_lookup",
+        "store.shared_quota"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.retry_limit",
+      "name": "Bounded retry count per row with dead-letter queue for malformed rows",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A retry ceiling enforced outside the model's discretion.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.dedicated_quota",
+      "name": "Dedicated enrichment quota isolated from the shared sales/marketing key",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Isolating credentials/quota bounds blast radius regardless of agent behavior.",
+      "covers": [
+        "store.shared_quota"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.spend_alert",
+      "name": "Spend alert / anomaly detection with automatic circuit breaker on the enrichment account",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Detective control; reduces time-to-detection but does not prevent the initial runaway.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "F1-runaway-spend-loop",
+      "title": "Lethal spend loop (TC6): unbounded enrich.lookup retries exhaust a shared quota with no spend cap or alert",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Nightly batch of 40,000 rows; ~3% have company names that can never produce a complete result"
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Billed per call; prompt instructs indefinite retry on failure/incompleteness; no retry cap"
+        },
+        {
+          "ref": "store.shared_quota",
+          "note": "Quota is shared with sales and marketing tools; exhaustion breaks their tooling until next month; no spend alert exists"
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.enrich_lookup",
+        "store.shared_quota"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "forecast": {
+        "triggers": [
+          "data_scope_expansion",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Nightly row volume, malformed-row rate, or job runtime rising further, or shared-quota exhaustion incidents reported by sales/marketing before remediation lands."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "No maximum on steps, runtime, retries, or sub agents; enrich.lookup is billed per call against a monthly quota shared with sales and marketing; there is no spend alert."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Roughly 3 percent of the 40,000-row nightly batch (about 1,200 rows) have malformed company names that never return a complete result, guaranteeing repeated retries on every run."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "'If a lookup fails or looks incomplete, retry, or spawn a researcher sub agent... Keep going until every row is complete' supplies no stop condition for rows that structurally cannot complete."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a hard per-run and monthly spend cap on the enrichment API key, isolated from the sales/marketing shared key.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bound retries per row (e.g., max 2) and route permanently malformed rows to a dead-letter queue instead of indefinite retry.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add spend/anomaly alerting with an automatic circuit breaker on the enrichment account.",
+          "priority": "p2",
+          "audience": "developer"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Set max_unattended_steps and max_runtime_minutes on the nightly batch job.",
+          "priority": "p1",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "autonomy_abuse",
+        "cascading_failure"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "F2-unbounded-recursive-spawn",
+      "title": "Unbounded recursive sub-agent spawning with no depth or count limit",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Lookup fails or looks incomplete for a row"
+        },
+        {
+          "ref": "cap.spawn_researcher",
+          "note": "Spawns a researcher sub agent; sub agents can themselves spawn further researchers recursively, with no depth or count limit"
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.spawn_researcher"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0029",
+          "name": "Denial of AI Service",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Average sub-agent spawn depth or concurrent researcher count per nightly run rising without a depth/count limit being introduced."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "Sub agents can spawn their own researchers, and there is no maximum on steps, runtime, retries, or sub agents."
+        },
+        {
+          "locator": "prompt.md:2",
+          "observation": "'Or spawn a researcher sub agent to investigate the account' is invoked on any failed or incomplete lookup, with no bound on how many times or how deep this can recurse."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Limit sub-agent spawn depth (disallow recursive spawning past one level) and cap total concurrent researcher sub-agents per batch run.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require human approval before exceeding a small threshold of concurrently spawned researcher sub agents.",
+          "priority": "p2",
+          "audience": "reviewer"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Rewrite the prompt to define an explicit stop condition (e.g., max attempts per row, mark unresolved rows for human review) instead of 'keep going until every row is complete'.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "autonomy_abuse",
+        "cascading_failure"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "Both findings reach the S3 severe sink class (spend and delegate actions are irreversible) from an internal-trust source, and both qualify for the A4 autonomy modifier: the agent is fully autonomous, can spawn agents recursively, and has null step and runtime limits. No preventive, containment, or detective control is declared or verified anywhere in the design (all listed controls are missing_recommended), so residual equals inherent at critical for both findings. The deterministic 3 percent malformed-row rate (about 1,200 of 40,000 rows nightly) means the unbounded retry/spawn loop is not a tail-risk scenario but a structurally guaranteed nightly occurrence, which is why likelihood is scored almost_certain despite the source being internal rather than untrusted. Because the shared quota also serves sales and marketing tooling, the consequence extends beyond the enrichment agent's own budget into cross-team denial of service. Forecast equals residual because the tier is already at the ceiling; data_scope_expansion (more rows or more teams on the shared key) and longer_task_horizon (deeper recursive spawn chains) are the triggers most likely to increase absolute cost and blast radius even though the ordinal tier cannot rise further."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration described in prompt.md and the accompanying runtime notes, not observed runtime behavior or actual incident data.",
+    "No IaC, MCP config, or tool manifest was provided; capability credential scopes (cap.spawn_researcher, cap.crm_write) are marked 'unknown' because they were not specified, which is a confidence-limiting gap.",
+    "No approval-gate or rate-limit configuration artifacts were supplied; the absence of controls is inferred from the runtime notes' explicit statement that no maximums or spend alerts exist, which is treated as authoritative for this assessment.",
+    "If any undisclosed control (for example, an infrastructure-level spend cap not mentioned in the runtime notes) exists, the residual tier for both findings would need to be recomputed."
+  ]
+}

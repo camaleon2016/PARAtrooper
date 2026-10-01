@@ -1,0 +1,436 @@
+{
+  "schema_version": "0.3.0",
+  "assessment": {
+    "assessment_id": "13_runaway_enrichment_cost-run004",
+    "assessed_at": "2026-09-30T23:13:57Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.2.0",
+      "rubric_version": "0.2.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "enrichment-agent",
+    "name": "Nightly CRM Enrichment Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.enrich_lookup",
+      "tool_ref": "enrich.lookup",
+      "action": "spend",
+      "target": "shared enrichment API quota (store.shared_quota), billed per call",
+      "data_sensitivity": "internal",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.spawn_researcher",
+      "tool_ref": "spawn_researcher_subagent",
+      "action": "delegate",
+      "target": "researcher sub-agent, which can itself spawn further researchers",
+      "data_sensitivity": "internal",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.crm_write",
+      "tool_ref": "crm.write",
+      "action": "write",
+      "target": "CRM account records (industry, size, headquarters fields)",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "unknown",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.crm_rows",
+      "source": "Nightly batch of CRM account rows",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": true,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:2-3",
+      "severity": "high",
+      "note": "\"Keep going until every row is complete\" combined with an instruction to retry or spawn a researcher on any failure gives no stopping condition. Runtime notes confirm there is no maximum on steps, runtime, retries, or sub-agents, so this instruction is the direct driver of the spend loop in finding F1."
+    },
+    {
+      "issue": "ambiguous_goal",
+      "evidence_locator": "prompt.md:2",
+      "severity": "moderate",
+      "note": "\"If a lookup fails or looks incomplete\" is not defined, leaving the model wide latitude to decide when to retry or spawn a sub-agent, which widens the trigger surface for the loop."
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.retry_spawn_cap",
+      "name": "Per-row retry and spawn cap",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented today. If implemented as a hard limit enforced by the orchestration runtime rather than the prompt, it would not decay with model capability.",
+      "covers": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctl.spend_cap",
+      "name": "Per-run spend cap / circuit breaker on enrichment quota",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. A hard spend ceiling enforced outside the agent would not depend on model behavior to hold.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.dedicated_quota",
+      "name": "Dedicated API key/quota isolated from sales and marketing",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. Isolating the credential removes the cross-team blast radius regardless of agent behavior.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.spend_alert",
+      "name": "Spend and usage alerting on the enrichment account",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented per runtime notes (\"no spend alert on the enrichment account\"). Detective only; does not itself prevent overrun.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability"
+    },
+    {
+      "control_id": "ctl.dead_letter_queue",
+      "name": "Dead-letter queue for rows that repeatedly fail",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. Would remove the guaranteed-failure rows (malformed company names) from the retry/spawn pool entirely.",
+      "covers": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "F1",
+      "title": "Lethal cost loop (TC6 spend loop): unbounded retry-and-spawn on guaranteed-failure rows drains a shared, cross-team API quota",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "40,000-row nightly batch; ~3% have malformed company names that never return a complete result."
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Billed per call against a quota shared with sales and marketing; failure on malformed rows triggers a retry per prompt.md:2."
+        },
+        {
+          "ref": "cap.spawn_researcher",
+          "note": "On failure or an 'incomplete-looking' result, a researcher sub-agent is spawned; sub-agents can spawn further researchers, and each can call cap.enrich_lookup again."
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "data_scope_expansion"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Nightly batch size grows beyond 40,000 rows, the malformed-row rate rises above 3%, or additional CRM data sources are enriched, further compounding an already-unbounded loop with no new control in place."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "\"There is no maximum on steps, runtime, retries, or sub agents. Sub agents can spawn their own researchers.\""
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "\"enrich.lookup is billed per call. The API key and its monthly quota are shared with the sales and marketing teams; when the quota runs out, their tools stop working until the next month.\""
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "\"Roughly 3 percent of rows have malformed company names that never return a complete result\" and \"There is no spend alert on the enrichment account.\""
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "\"retry, or spawn a researcher sub agent to investigate the account. Keep going until every row is complete.\" \u2014 the guaranteed-failure rows have no exit condition."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Enforce a hard cap on retries per row and on sub-agent spawn depth/count (for example, at most one retry and one level of spawning) in the orchestration runtime, not via prompt instruction.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-5"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a per-run spend cap / circuit breaker on the enrichment API key that halts the batch independent of task completion status.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "CP-2"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Issue the enrichment agent its own dedicated API key and quota, separate from the key shared with sales and marketing, so a runaway job cannot deny those teams service.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add real-time spend/usage alerting and a per-run digest of quota consumption for the enrichment account.",
+          "priority": "p2",
+          "audience": "reviewer",
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Route rows that fail validation repeatedly (for example, malformed company names) to a dead-letter queue for human review instead of unlimited retry or spawn.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "autonomy_abuse",
+        "cascading_failure"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 3.1"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "8.2",
+          "note": "Batch size growth or new enrichment scope should be treated as a significant change requiring reassessment."
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "F2",
+      "title": "Fully autonomous CRM writes at scale with no approval gate, spend/quality control, or credential scoping",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Internal batch data, not reviewed per-row by a human before processing."
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Or cap.spawn_researcher for rows that fail lookup."
+        },
+        {
+          "ref": "cap.crm_write",
+          "note": "Enriched fields are written back to the system of record with no described validation or approval step."
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.enrich_lookup",
+        "cap.crm_write"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0053",
+          "name": "AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "data_scope_expansion"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Enrichment scope expands beyond firmographic fields (industry, size, headquarters) to confidential or restricted fields (for example contact PII or financial data), or crm_write access broadens to more object types."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "No control of any kind (approval gate, validation step, rate limit) is described for cap.crm_write; only cost-related limits are discussed, and even those are absent."
+        },
+        {
+          "locator": "id table",
+          "observation": "cap.crm_write is described only as 'CRM write of enriched fields,' with no mention of scoped credentials, per-field confidence thresholds, or review."
+        },
+        {
+          "locator": "prompt.md:1-3",
+          "observation": "The prompt instructs filling in fields directly with no mention of validation before write."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require sampling-based or full human review before enriched fields overwrite existing CRM records, or gate low-confidence writes (especially those from spawned researcher sub-agents) behind approval.",
+          "priority": "p2",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Log the source (enrich.lookup vs. researcher sub-agent) and confidence of every written field for auditability and rollback.",
+          "priority": "p3",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "tampering"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "moderate",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "The design has no declared or verified controls of any kind: no step, runtime, retry, or spawn limits; no spend cap or alert; no approval gate on writes; and a shared credential with other teams. F1 (unbounded retry-and-spawn against a shared, per-call-billed quota, worsened by a guaranteed 3% permanently-failing row rate) is inherently critical once the S3 'spend' sink and A4/self-spawning autonomy modifier are applied, and nothing in the design earns credit at the residual step, so residual equals inherent. F2 (unreviewed, unvalidated writes to CRM at full autonomy) is independently high for the same reason. Because no structural control exists today, none of the standard forecast triggers can defeat anything further; the forecast stays at the same critical ceiling, and the single highest-leverage fix is adding a structural, independent spend cap plus retry/spawn limits (ctl.spend_cap, ctl.retry_spawn_cap), since that is the only change that would sever rather than merely narrow the path."
+  },
+  "limitations": [
+    "This assessment reflects the declared design in prompt.md and the accompanying runtime notes, not observed runtime behavior; no logs, traces, or execution history were reviewed.",
+    "No MCP/A2A configuration, tool manifest, or IaC was provided. The sub-agent spawning mechanism, the exact data sources the researcher sub-agent consults, and the credential scope for cap.crm_write are inferred from prose runtime notes rather than verified configuration, which lowers confidence on those fields.",
+    "No approval gate, rate limit, or spend cap is described anywhere in the provided artifacts. Per the skill's evidentiary rule, their absence is recorded as missing_recommended controls rather than assumed to exist."
+  ]
+}
