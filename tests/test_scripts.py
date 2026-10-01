@@ -417,3 +417,25 @@ def test_run_skill_truncation_resume_and_metadata(tmp_path, monkeypatch):
     assessor = doc["assessment"]["assessor"]
     assert assessor["model"] == "test-model" and assessor["version"] == run_skill.skill_version()
     assert doc["assessment"]["assessed_at"].endswith("Z")
+
+
+def test_tally_error_kind_normalizes_ids_and_values():
+    import tally_runs  # pylint: disable=import-outside-toplevel
+    a = tally_runs.error_kind("findings/f.one: toxic_combination id 'TC1' is not defined")
+    b = tally_runs.error_kind("findings/f.two: toxic_combination id 'TC4' is not defined")
+    assert a == b
+
+
+def test_manifest_keeps_original_start_and_records_every_limit(tmp_path, monkeypatch):
+    import argparse  # pylint: disable=import-outside-toplevel
+    import run_skill  # pylint: disable=import-outside-toplevel
+    monkeypatch.setattr(run_skill, "RUNS", tmp_path)
+    monkeypatch.setattr(run_skill, "git_commit", lambda: "abc1234")
+    first = argparse.Namespace(model="m", runs=5, temperature=None, max_tokens=32000)
+    run_skill.write_manifest(first)
+    started = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))["started_at"]
+    run_skill.write_manifest(argparse.Namespace(model="m", runs=5, temperature=None, max_tokens=64000))
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["started_at"] == started
+    assert manifest["max_tokens"] == [32000, 64000]
+    assert "last_resumed_at" in manifest

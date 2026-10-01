@@ -154,10 +154,12 @@ def mean_output_tokens(runs_dir: Path) -> float | None:
 
 def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict) -> str:
     """Summary table suitable for publishing in the README or a release."""
-    lines = ["# PARA eval results", ""]
+    lines = ["# PARA eval results", "",
+             "Validator clean means the assessment parsed, matched the schema, and passed every rubric "
+             "consistency check in scripts/validate.py with zero errors.", ""]
     if meta:
         lines += [f"- {k}: {v}" for k, v in meta.items()] + [""]
-    head = "| Case | Kind | Runs | Schema valid | Recall | " + " | ".join(
+    head = "| Case | Kind | Runs | Validator clean | Recall | " + " | ".join(
         f"{k.capitalize()} agreement / in range" for k in FIELDS) + " | False positives |"
     lines += [head, "|" + "---|" * (6 + len(FIELDS))]
     for case_id, s in stats.items():
@@ -168,7 +170,7 @@ def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict) -
         total_runs = sum(s["runs"] for s in stats.values())
         def weighted(key):
             return sum(s[key] * s["runs"] for s in stats.values()) / total_runs
-        lines += ["", f"Overall: {total_runs} runs, schema valid {weighted('valid'):.0%}, "
+        lines += ["", f"Overall: {total_runs} runs, validator clean {weighted('valid'):.0%}, "
                       f"mean recall {weighted('recall'):.0%}."]
         tokens = [s["mean_output_tokens"] for s in stats.values() if s.get("mean_output_tokens")]
         if tokens:

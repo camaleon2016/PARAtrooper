@@ -17,6 +17,8 @@
 - Crosswalk ISO/IEC 42001: every Annex A id checked against the licensed text (A.6.2.6, A.7, A.8, A.10); A.6.2.4 AI system verification and validation added to ASI10. No unchecked ids remain in the crosswalk.
 
 ### Fixed
+- Manifest records every `--max-tokens` value used and keeps the original start time when a batch is resumed (`last_resumed_at` added). The report column "Schema valid" is renamed "Validator clean", with a definition, because it counts rubric consistency errors as well as schema errors.
+- `evals/tally_runs.py`: counts run outcomes (clean, truncated, unparseable, validator errors) and the most common validator error kinds.
 - Pilot run findings: `run_skill.py` now reports truncation at `--max-tokens` clearly and defaults to 32,000 tokens, since the model's reasoning counts toward the limit. `--resume` redoes failed runs instead of skipping them. Run metadata the model cannot know (`assessed_at`, assessor version and model) is stamped by the harness.
 - `toxic_combinations.md` and SKILL.md step 8 now state that `toxic_combination` holds element ids from the document, never pattern ids like `TC1`. The pilot run used pattern ids, which the validator rejects.
 - Crosswalk 0.2.0 cited AML.T0104, which ATLAS 2026.08 renumbered to AML.T0115.002 (Publish Poisoned AI Artifacts: AI Agent Tools).

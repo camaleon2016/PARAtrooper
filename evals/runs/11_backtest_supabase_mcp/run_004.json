@@ -1,0 +1,502 @@
+{
+  "schema_version": "0.3.0",
+  "assessment": {
+    "assessment_id": "11_backtest_supabase_mcp-run004",
+    "assessed_at": "2026-10-01T04:01:32Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.2.0",
+      "rubric_version": "0.2.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "mcp_config",
+        "locator": "Artifact: configuration (mcpServers.supabase)"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "Artifact: runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "ide-db-agent",
+    "name": "IDE DB Agent (Supabase MCP)",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.sql_read",
+      "tool_ref": "supabase.execute_sql (read)",
+      "action": "read",
+      "target": "Supabase database via service role, bypasses row level security; includes support ticket tables and the integration_tokens table in the same database",
+      "data_sensitivity": "restricted",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.tool_call_prompt",
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.sql_write_reply",
+      "tool_ref": "supabase.execute_sql (insert into support_messages)",
+      "action": "write",
+      "target": "support_messages table; rows are rendered back to the customer who opened the ticket",
+      "data_sensitivity": "confidential",
+      "reversibility": "partially_reversible",
+      "is_egress": true,
+      "approval_gate_ref": "ctl.tool_call_prompt",
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.developer_request",
+      "source": "Developer's direct prompt in the IDE client",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ]
+    },
+    {
+      "input_id": "in.ticket_message",
+      "source": "Customer-written ticket message submitted through the public support widget, stored in the database, later retrieved into the agent's context by cap.sql_read",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A1_act_with_approval_each_step",
+    "max_unattended_steps": 1,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "Developer request: \"Show me the latest open support tickets.\"",
+      "severity": "high",
+      "note": "The task is scoped to tickets, but the underlying execute_sql tool is granted service-role access to the whole database, including the integration_tokens table. Nothing in the design restricts queries to ticket-related tables, so the actual reachable scope is far wider than the stated task."
+    }
+  ],
+  "protocols": [
+    {
+      "protocol": "mcp",
+      "peer_ref": "supabase-mcp-server",
+      "direction": "bidirectional",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "unknown",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1002",
+          "name": "Supply Chain Compromise",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.tool_call_prompt",
+      "name": "IDE client per-call approval prompt showing raw SQL",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The approver sees the literal SQL for each call (approval_review_mode: raw_action), so it does not decay simply because the model gets stronger. However, raw SQL text does not convey downstream consequence (that a row inserted into support_messages is customer-visible, or that a table named integration_tokens is a credential store); runtime notes describe developers approving many calls per session, which matches the SAFE-T1403 consent-fatigue pattern. The gate is formally independent but empirically defeated by volume and lack of semantic context, which is exactly the mechanism behind the real-world Supabase MCP exfiltration incident this design mirrors.",
+      "covers": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.8",
+          "framework_edition": "2023"
+        }
+      ],
+      "approval_review_mode": "raw_action",
+      "severs_path": false
+    },
+    {
+      "control_id": "ctl.scoped_db_role",
+      "name": "Least-privilege, RLS-respecting role for ticket operations (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A role that cannot read integration_tokens or other non-ticket tables would make the token data unreachable from cap.sql_read under any model behavior, independent of approvals.",
+      "covers": [
+        "cap.sql_read"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctl.destination_binding",
+      "name": "Recipient/content binding on support_messages inserts (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Binding the write to a human-reviewed, sanitized reply tied to the system-of-record ticket would prevent arbitrary queried data (such as token rows) from being inserted into a customer-visible row, regardless of what the model was induced to read.",
+      "covers": [
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctl.mcp_pin",
+      "name": "Pinned/hashed MCP server version (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Pinning and hash-verifying the Supabase MCP server package would prevent a rug-pulled or compromised update from silently changing tool behavior or capturing the access token. It narrows supply-chain risk but does not by itself sever the ticket-injection path in F1.",
+      "covers": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "severs_path": false
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f1-trifecta-ticket-to-tokens-to-reply",
+      "title": "Lethal trifecta (TC1): injected ticket content drives service-role read of integration_tokens and exfiltration via customer-visible reply",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.ticket_message",
+          "note": "Attacker submits a ticket through the public support widget containing hidden instructions (indirect prompt injection), stored in the ticket table."
+        },
+        {
+          "ref": "in.developer_request",
+          "note": "Developer asks the agent to show the latest open tickets; this pulls the attacker's ticket content, including the injected instructions, into the agent's context."
+        },
+        {
+          "ref": "cap.sql_read",
+          "note": "execute_sql runs under the service role, which bypasses row level security; the injected instructions can direct the agent to additionally query the integration_tokens table in the same database."
+        },
+        {
+          "ref": "cap.sql_write_reply",
+          "note": "The agent inserts the queried token data into support_messages, which is rendered back to the customer who filed the ticket (the attacker), completing exfiltration across the trust boundary."
+        }
+      ],
+      "toxic_combination": [
+        "in.ticket_message",
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051.001",
+          "name": "LLM Prompt Injection: Indirect",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1102",
+          "name": "Prompt Injection (Multiple Vectors)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1914",
+          "name": "Tool-to-Tool Exfil",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "moderate",
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "autonomy_increase",
+          "model_upgrade"
+        ],
+        "failing_controls": [
+          "ctl.tool_call_prompt"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Approvals per developer session continuing to rise (already described as 'many calls per session'); any shift toward batch- or auto-approving repeated execute_sql calls; autonomy raised from approval-each-step toward approval-only-on-sensitive without a rule that flags cross-table reads feeding customer-visible writes; a more capable underlying model producing more plausible single-step SQL that individually looks benign."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes: database connection",
+          "observation": "The database connection uses the service role, which bypasses row level security, and a table of integration tokens sits in the same database reachable by the same execute_sql tool used for ticket reads."
+        },
+        {
+          "locator": "runtime notes: support widget",
+          "observation": "Customers write ticket messages through the public support widget (untrusted input), and rows in support_messages are shown back to the customer, forming an egress channel whose content is whatever the agent inserts."
+        },
+        {
+          "locator": "runtime notes: approval behavior",
+          "observation": "The IDE client shows SQL and asks approval per call, but developers approve many calls in a session, matching the SAFE-T1403 consent-fatigue pattern documented as the failure mode in the real-world Supabase MCP data-exfiltration incident this design mirrors."
+        },
+        {
+          "locator": "config: mcpServers.supabase",
+          "observation": "A single execute_sql capability is exposed with no separate, narrower tool or role for ticket-only operations."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Use a least-privilege database role for ticket triage that respects row level security and has no grant on integration_tokens or other credential tables; reserve the service role for a separate, non-agent-accessible path.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6",
+              "framework_edition": "2023"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bind support_messages inserts to a human-composed, sanitized reply tied to the originating ticket; never allow raw rows retrieved from execute_sql to be written into a customer-visible field automatically.",
+          "priority": "p1",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Spotlight or tag content retrieved from ticket messages as untrusted before it reaches planning, and run an injection classifier on it prior to allowing it to influence further tool calls.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Replace isolated per-call SQL approval with a plan-level review that shows the read targets and write destinations together before execution, since per-call raw SQL defeats review through consent fatigue (SAFE-T1403).",
+          "priority": "p1",
+          "audience": "reviewer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Alert when execute_sql reads touch integration_tokens or similar credential tables from an agent session, and when support_messages inserts contain token-like patterns.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "elevation_of_privilege",
+        "information_disclosure"
+      ],
+      "agentic_class": [
+        "goal_manipulation",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f2-unpinned-mcp-server-cli-token",
+      "title": "Agentic supply chain (ASI04): unpinned '@latest' Supabase MCP server plus access token passed via CLI argument",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "cap.sql_read",
+          "note": "A rug-pulled or compromised update of the npx-fetched '@latest' package could silently alter execute_sql behavior or exfiltrate query results."
+        },
+        {
+          "ref": "cap.sql_write_reply",
+          "note": "The same compromised server controls what is actually written, independent of the model's intent."
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0010.005",
+          "name": "AI Supply Chain Compromise: AI Agent Tool",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1002",
+          "name": "Supply Chain Compromise",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "data_scope_expansion",
+          "model_upgrade"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Any addition of further credentialed integrations or tokens to the same Supabase project; the MCP server auto-updating to a new unverified version; the same access token reused for additional non-ticket workflows."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "config: mcpServers.supabase.args",
+          "observation": "The server is invoked via `npx -y @supabase/mcp-server-supabase@latest`, which always fetches the newest published version with no pinning or hash verification (definitions_pinned: false)."
+        },
+        {
+          "locator": "config: mcpServers.supabase.args",
+          "observation": "The access token is passed as a `--access-token` CLI argument rather than through a protected secret binding, which is typically visible to other local processes via the process list or shell history."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pin the MCP server to a specific, hash-verified version instead of '@latest', and verify package provenance before any upgrade.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.10",
+              "framework_edition": "2023"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pass the access token through a secret manager or protected environment variable rather than a CLI argument, and scope the token to the minimum permissions needed for ticket triage.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SR-3"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "spoofing"
+      ],
+      "agentic_class": [],
+      "maestro_layers": [
+        "L4_deployment_infrastructure",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.10",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Inherent risk is critical because an untrusted source (customer ticket content) can reach an irreversible, confidential/restricted-data egress sink (service-role read of integration_tokens followed by a customer-visible insert) in finding F1. The only control in the design is a per-call, raw-action approval prompt (ctl.tool_call_prompt), which under the rubric's raw_action credit rule brings F1's residual to moderate; the unscoped, unpinned MCP supply chain in F2 has no applicable control at all, so its residual stays high. Rolled up, residual is high (max of moderate and high). The forecast is critical: this exact design pattern (public-facing untrusted content, service-role credentials in the same database as secrets, and a customer-visible write path) reproduces a known real-world incident in which per-call raw SQL approval was defeated by approval fatigue (SAFE-T1403) and the absence of least-privilege scoping. The single control whose decay moves the forecast most is ctl.tool_call_prompt: it is formally independent of model capability, but the design's own description of high approval volume, and the lack of any structural severing control (scoped credential, destination binding, or pinned MCP definitions), means the forecast reverts to critical under ordinary triggers (longer task horizon, autonomy increase, model upgrade, or data scope expansion)."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration shown in the artifacts above, not observed runtime behavior; no logs, traces, or verified runtime enforcement were available.",
+    "No system prompt artifact was provided for the agent; instruction-level review is limited to the single developer request and the runtime notes describing approval behavior.",
+    "Confidence in the supply-chain finding (F2) rests on the mcp config package reference alone; no SBOM, registry audit, or checksum verification was available to confirm whether a pinned or verified version is used anywhere else in the pipeline."
+  ]
+}

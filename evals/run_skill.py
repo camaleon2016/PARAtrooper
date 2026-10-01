@@ -165,6 +165,39 @@ def skill_version() -> str:
     return match.group(1) if match else "unknown"
 
 
+def write_manifest(args: argparse.Namespace) -> None:
+    """Record how the runs were produced. A resumed batch keeps the original start time and adds
+    its own settings, so published numbers always disclose every limit that produced them."""
+    path = RUNS / "manifest.json"
+    now = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    previous = {}
+    if path.exists():
+        try:
+            previous = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            previous = {}
+    commit = git_commit()
+    same_batch = previous.get("model") == args.model and previous.get("skill_commit") == commit
+    max_tokens = previous.get("max_tokens", []) if same_batch else []
+    if not isinstance(max_tokens, list):
+        max_tokens = [max_tokens]
+    if args.max_tokens not in max_tokens:
+        max_tokens.append(args.max_tokens)
+    manifest = {
+        "model": args.model,
+        "runs_per_case": args.runs,
+        "temperature": "api default" if args.temperature is None else args.temperature,
+        "max_tokens": max_tokens,
+        "skill_commit": commit,
+        "rubric_version": rubric_version(),
+        "schema_version": json.loads(
+            (ROOT / "examples" / "support_agent.assessment.json").read_text(encoding="utf-8"))["schema_version"],
+        "started_at": previous.get("started_at", now) if same_batch else now,
+        "last_resumed_at": now,
+    }
+    path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
 def select_cases(case_id: str | None) -> list[Path]:
     cases = sorted((EVALS / "cases").glob("*.md"))
     if case_id:
@@ -206,17 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
 
     RUNS.mkdir(parents=True, exist_ok=True)
-    manifest = {
-        "model": args.model,
-        "runs_per_case": args.runs,
-        "temperature": "api default" if args.temperature is None else args.temperature,
-        "skill_commit": git_commit(),
-        "rubric_version": rubric_version(),
-        "schema_version": json.loads(
-            (ROOT / "examples" / "support_agent.assessment.json").read_text(encoding="utf-8"))["schema_version"],
-        "started_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-    }
-    (RUNS / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    write_manifest(args)
+
 
     failures = 0
     for case in cases:
