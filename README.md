@@ -68,7 +68,7 @@ Run outputs in `evals/runs/` are committed with each published result so reviewe
 
 ## Results
 
-Results for the current release are in [evals/RESULTS.md](evals/RESULTS.md), including the two public incident backtests: would PARA, run before the incident, have named the attack path and the control that failed.
+Results for the current release are in [evals/RESULTS.md](evals/RESULTS.md), including the two public incident backtests: would PARA, run before the incident, have named the attack path and the control that failed. [evals/RESULTS_NOTES.md](evals/RESULTS_NOTES.md) explains the numbers: how the batch was run, why some runs were not validator clean, and the known limitations they show.
 
 ## Status
 
