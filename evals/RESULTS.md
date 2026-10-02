@@ -1,14 +1,18 @@
 # PARA eval results
 
+Validator clean means the assessment parsed, matched the schema, and passed every rubric consistency check in scripts/validate.py with zero errors.
+
 - model: claude-sonnet-5
 - runs_per_case: 5
 - temperature: api default
+- max_tokens: [32000, 64000]
 - skill_commit: e158107
 - rubric_version: 0.2.0
 - schema_version: 0.3.0
-- started_at: 2026-10-01T04:01:31+00:00
+- started_at: 2026-09-30T18:57:44+00:00
+- last_resumed_at: 2026-10-01T04:01:31+00:00
 
-| Case | Kind | Runs | Schema valid | Recall | Inherent agreement / in range | Residual agreement / in range | Forecast agreement / in range | False positives |
+| Case | Kind | Runs | Validator clean | Recall | Inherent agreement / in range | Residual agreement / in range | Forecast agreement / in range | False positives |
 |---|---|---|---|---|---|---|---|---|
 | 01_support_triage | vulnerable | 5 | 80% | 85% | 100% / 100% | 100% / 100% | 100% / 100% | 0 |
 | 02_hr_policy_qa | clean | 5 | 80% | 100% | 60% / 80% | 80% / 80% | 40% / 40% | 1 |
@@ -24,7 +28,7 @@
 | 12_repudiation_shared_identity | coverage | 5 | 60% | 73% | 80% / 100% | 80% / 100% | 80% / 100% | 0 |
 | 13_runaway_enrichment_cost | coverage | 5 | 40% | 87% | 100% / 0% | 100% / 0% | 100% / 100% | 0 |
 
-Overall: 65 runs, schema valid 77%, mean recall 92%.
+Overall: 65 runs, validator clean 77%, mean recall 92%.
 Mean output tokens per assessment: 25,836.
 
 Backtests (would PARA have flagged the incident path and failing control beforehand):
