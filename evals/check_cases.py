@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 EVALS = ROOT / "evals"
-SCHEMA = json.loads((ROOT / "schema" / "assessment.schema.json").read_text(encoding="utf-8"))
+SCHEMA = json.loads((ROOT / "schema" / "assessment.schema.json").read_text(encoding="utf-8-sig"))
 TIERS = set(SCHEMA["$defs"]["tier"]["enum"])
 TRIGGERS = set(SCHEMA["$defs"]["forecast_trigger"]["enum"])
 KINDS = {"vulnerable", "clean", "edge", "forecast", "backtest", "coverage"}
@@ -57,7 +57,7 @@ def stable_ids(case_text: str) -> set[str]:
 
 def check_case(exp_path: Path) -> list[str]:
     problems: list[str] = []
-    exp = json.loads(exp_path.read_text(encoding="utf-8"))
+    exp = json.loads(exp_path.read_text(encoding="utf-8-sig"))
     case_id = exp.get("case_id", "")
     where = exp_path.name
     if exp_path.name != f"{case_id}.expected.json":

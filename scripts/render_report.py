@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--view", choices=["developer", "reviewer", "both"], default="both")
     ap.add_argument("-o", "--output", type=Path)
     args = ap.parse_args(argv)
-    doc = json.loads(args.assessment.read_text(encoding="utf-8"))
+    doc = json.loads(args.assessment.read_text(encoding="utf-8-sig"))
     text = render(doc, args.view)
     if args.output:
         args.output.write_text(text, encoding="utf-8")
