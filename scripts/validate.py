@@ -142,6 +142,7 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
     caps = {c["capability_id"]: c for c in doc["capabilities"]}
     inputs = {i["input_id"]: i for i in doc["inputs"]}
     controls = {c["control_id"]: c for c in doc["controls"]}
+    elements = {e["element_id"]: e for e in doc.get("elements", [])}
     findings = doc["findings"]
 
     all_ids: dict[str, str] = {}
@@ -149,6 +150,7 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
         ("capability", doc["capabilities"], "capability_id"),
         ("input", doc["inputs"], "input_id"),
         ("control", doc["controls"], "control_id"),
+        ("element", doc.get("elements", []), "element_id"),
         ("finding", findings, "finding_id"),
     ):
         for item in items:
@@ -157,8 +159,14 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
                 errors.append(f"duplicate id '{ident}' ({all_ids[ident]} and {kind})")
             all_ids[ident] = kind
 
-    known_refs = set(caps) | set(inputs) | set(controls) | {doc["subject"]["agent_id"]}
+    known_refs = set(caps) | set(inputs) | set(controls) | set(elements) | {doc["subject"]["agent_id"]}
     known_refs |= {p["peer_ref"] for p in doc.get("protocols", [])}
+    planned = {i for i, item in {**caps, **inputs, **elements}.items() if item.get("planned")}
+
+    for el in elements.values():
+        for ref in el.get("refs", []):
+            if ref not in known_refs or ref == el["element_id"]:
+                errors.append(f"elements/{el['element_id']}: refs unknown id '{ref}'")
 
     for inp in doc["inputs"]:
         for ref in inp.get("reaches_capabilities", []):
@@ -170,7 +178,8 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
             errors.append(f"capabilities/{cap['capability_id']}: approval_gate_ref '{gate}' is not a control")
     for ctl in doc["controls"]:
         for ref in ctl.get("covers", []):
-            if ref not in caps and ref not in inputs:
+            # Same reference set as attack paths, so a control can protect a store or a peer connection.
+            if ref not in known_refs or ref in controls:
                 errors.append(f"controls/{ctl['control_id']}: covers unknown id '{ref}'")
         if ctl["mechanism"] == "behavioral" and ctl["capability_dependence"] == "independent":
             warnings.append(
@@ -210,6 +219,12 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
         for ref in f.get("toxic_combination", []):
             if ref not in known_refs:
                 errors.append(f"{fid}: toxic_combination ref '{ref}' not defined in document")
+        used_planned = sorted(planned & ({s["ref"] for s in f.get("attack_path", [])} | set(f.get("toxic_combination", []))))
+        if used_planned and f["horizon"] == "present":
+            errors.append(f"{fid}: present finding references planned element(s) {used_planned}; use horizon forecast")
+        adding = {"new_tool", "new_mcp_server", "new_peer_agent", "data_scope_expansion"}
+        if used_planned and f.get("forecast") and not adding & set(f["forecast"]["triggers"]):
+            warnings.append(f"{fid}: references planned element(s) {used_planned} but no trigger that adds them")
         if RANK[f["residual_risk"]] > RANK[f["inherent_risk"]]:
             errors.append(f"{fid}: residual_risk {f['residual_risk']} exceeds inherent_risk {f['inherent_risk']}")
         fc = f.get("forecast")
@@ -265,8 +280,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     try:
-        doc = json.loads(args.assessment.read_text(encoding="utf-8"))
-        schema = json.loads(args.schema.read_text(encoding="utf-8"))
+        doc = json.loads(args.assessment.read_text(encoding="utf-8-sig"))
+        schema = json.loads(args.schema.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

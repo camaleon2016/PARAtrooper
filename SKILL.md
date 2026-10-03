@@ -20,6 +20,7 @@ The output is one JSON document that conforms to `schema/assessment.schema.json`
 4. **Tiers come from `references/rubric.md`, not intuition.** If judgment affected a tier, write it in the evidence or the rating rationale.
 5. **Always state the design versus runtime limitation.** `limitations` must say that the assessment reflects declared design and configuration, not observed runtime behavior.
 6. **Forecasts are conditional.** Phrase them as "if trigger T, then controls C fail, and the tier becomes X." Never give dates or probabilities.
+7. **Reference only ids defined in the document.** Every `attack_path` step, `toxic_combination` entry, and control `covers` entry must be an `input_id`, `capability_id`, `control_id`, `element_id`, the subject `agent_id`, or a protocol `peer_ref`, spelled exactly. Artifact locators such as `prompt.md:4-5` belong in `evidence`, never in an attack path. If something you need to reference has no id yet, declare it first (steps 2, 3, and 3a).
 
 ## Workflow
 
@@ -37,9 +38,15 @@ For each tool or action, fill in `action`, `target`, `data_sensitivity`, `revers
 
 Watch for hidden egress. Anything that can put data at an attacker reachable destination counts: URL fetches with query strings, image or link rendering, ticket or PR comments, commit messages, webhooks, rows the requester can read back, and arguments passed to a third party tool or MCP server.
 
+If the artifacts describe a capability that is planned but not built yet (a roadmap item, a tool to be added next sprint), record it with `planned: true`. Reference planned capabilities only in `horizon: forecast` findings, with the trigger that would add them (`new_tool`, `new_mcp_server`, `new_peer_agent`, or `data_scope_expansion`).
+
 ### 3. Inventory inputs
 
-List every source of content that enters the context. That includes user prompts, retrieved documents, tool outputs, memory, peer agents, and files. Assign `trust_level` using the source classes and downgrade rules in the rubric. Fill in `reaches_capabilities`.
+List every source of content that enters the context. That includes user prompts, retrieved documents, tool outputs, memory, peer agents, and files. Assign `trust_level` using the source classes and downgrade rules in the rubric. Fill in `reaches_capabilities`. Planned inputs (for example, a ticket feed to be connected later) get `planned: true` and follow the same rule as planned capabilities.
+
+### 3a. Declare other elements
+
+Declare everything else a finding or control needs to reference in `elements`: data stores (memory, vector stores, logs, audit records, quotas, configuration), peer agents, and servers. Use the ids from the case or artifacts when they are given. Set `kind` to `process`, `data_store`, `data_flow`, or `external_entity`, and set `is_audit_record: true` on stores whose integrity makes actions attributable.
 
 ### 4. Assess autonomy
 

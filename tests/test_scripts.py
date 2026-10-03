@@ -439,3 +439,58 @@ def test_manifest_keeps_original_start_and_records_every_limit(tmp_path, monkeyp
     assert manifest["started_at"] == started
     assert manifest["max_tokens"] == [32000, 64000]
     assert "last_resumed_at" in manifest
+
+
+def test_elements_and_peers_are_referenceable():
+    doc = example()
+    doc["elements"].append({"element_id": "store.quota", "kind": "data_store", "refs": ["cap.email_send"]})
+    doc["controls"][1]["covers"] = ["cap.email_send", "store.quota", "mail_mcp"]
+    doc["findings"][0]["toxic_combination"].append("store.quota")
+    errors, _ = run(doc)
+    assert not errors
+
+
+def test_unknown_references_still_fail():
+    doc = example()
+    doc["controls"][1]["covers"] = ["store.nowhere"]
+    doc["elements"][0]["refs"] = ["cap.missing"]
+    doc["findings"][0]["attack_path"].append({"ref": "prompt.md:4-5"})
+    errors, _ = run(doc)
+    assert has(errors, "covers unknown id 'store.nowhere'")
+    assert has(errors, "refs unknown id 'cap.missing'")
+    assert has(errors, "attack_path ref 'prompt.md:4-5' not defined")
+
+
+def planned_example(horizon, triggers):
+    doc = example()
+    doc["capabilities"].append({
+        "capability_id": "cap.web_fetch", "action": "send_external", "target": "Any URL",
+        "data_sensitivity": "public", "reversibility": "irreversible", "is_egress": True, "planned": True,
+    })
+    f = doc["findings"][0]
+    f["horizon"] = horizon
+    f["attack_path"].append({"ref": "cap.web_fetch"})
+    f["forecast"]["triggers"] = triggers
+    return doc
+
+
+def test_planned_capability_rejected_in_present_finding():
+    errors, _ = run(planned_example("present", ["model_upgrade"]))
+    assert has(errors, "present finding references planned element(s) ['cap.web_fetch']")
+
+
+def test_planned_capability_allowed_in_forecast_with_adding_trigger():
+    errors, warnings = run(planned_example("forecast", ["new_tool"]))
+    assert not has(errors, "planned element")
+    assert not has(warnings, "no trigger that adds them")
+    _, warnings = run(planned_example("forecast", ["model_upgrade"]))
+    assert has(warnings, "no trigger that adds them")
+
+
+def test_json_inputs_tolerate_byte_order_mark(tmp_path):
+    # PowerShell 5 and some Windows editors save UTF-8 with a byte order mark.
+    doc_path = tmp_path / "bom.assessment.json"
+    doc_path.write_text(EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8-sig")
+    assert validate.main([str(doc_path), "--strict"]) == 0
+    exp = json.loads((ROOT / "evals" / "expected" / "01_support_triage.expected.json").read_text(encoding="utf-8"))
+    assert run_consistency.score_file(doc_path, exp, SCHEMA)["valid"] is True

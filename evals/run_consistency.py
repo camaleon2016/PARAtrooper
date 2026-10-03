@@ -116,7 +116,7 @@ def score_file(path: Path, exp: dict, schema: dict) -> dict:
     """Score one run file. Unparseable or structurally broken output counts as an invalid run, never
     as a skipped one, so failures cannot quietly raise the averages."""
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         return invalid_result(f"unreadable: {exc}")
     if not isinstance(doc, dict) or "_parse_error" in doc:
@@ -144,7 +144,7 @@ def mean_output_tokens(runs_dir: Path) -> float | None:
     counts = []
     for meta_path in runs_dir.glob("run_[0-9][0-9][0-9].meta.json"):
         try:
-            value = json.loads(meta_path.read_text(encoding="utf-8")).get("output_tokens")
+            value = json.loads(meta_path.read_text(encoding="utf-8-sig")).get("output_tokens")
         except (OSError, json.JSONDecodeError):
             continue
         if isinstance(value, int):
@@ -208,7 +208,7 @@ def summarize(case_id: str, results: list[dict], min_agreement: float) -> tuple[
     valid = sum(r["valid"] for r in results) / n
     fp = sum(r["false_positives"] for r in results)
     ok &= valid == 1 and fp == 0
-    lines.append(f"  recall={recall:.2f} schema_valid={valid:.2f} false_positives={fp}")
+    lines.append(f"  recall={recall:.2f} validator_clean={valid:.2f} false_positives={fp}")
     return lines, ok
 
 
@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--report", type=Path, help="write a Markdown summary table to this file")
     args = ap.parse_args(argv)
 
-    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8-sig"))
     expected_files = sorted((EVALS / "expected").glob("*.expected.json"))
     if args.case:
         expected_files = [p for p in expected_files if p.name == f"{args.case}.expected.json"]
@@ -232,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
 
     all_ok, report, dump, stats, kinds = True, [], {}, {}, {}
     for exp_path in expected_files:
-        exp = json.loads(exp_path.read_text(encoding="utf-8"))
+        exp = json.loads(exp_path.read_text(encoding="utf-8-sig"))
         case_id = exp["case_id"]
         runs_dir = EVALS / "runs" / case_id
         if args.runner:
@@ -254,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         args.json.write_text(json.dumps(dump, indent=2), encoding="utf-8")
     if args.report:
         manifest_path = EVALS / "runs" / "manifest.json"
-        meta = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+        meta = json.loads(manifest_path.read_text(encoding="utf-8-sig")) if manifest_path.exists() else {}
         args.report.write_text(markdown_report(stats, kinds, meta), encoding="utf-8")
     return 0 if all_ok else 1
 

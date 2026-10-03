@@ -1,6 +1,24 @@
 # Changelog
 
-## 0.3.0 (2026-10-02)
+## 0.3.1 (unreleased)
+
+Schema 0.4.0. Rubric unchanged at 0.2.0. Fixes the schema and validator gaps found by the v0.3.0 baseline (see `evals/RESULTS_NOTES.md`).
+
+### Added
+- Schema: `elements` (data stores, peer agents, servers, and flows) so findings and controls can reference parts of a design that are not inputs or capabilities. Five baseline runs failed because they referenced data stores with no way to declare them.
+- Schema: `planned` on capabilities, inputs, and elements, for roadmap items. Three baseline runs on the forecast only case invented ids for planned tools.
+- Validator: present findings may not reference planned elements; forecast findings that do should name a trigger that adds them.
+- SKILL.md rule 7 and step 3a: reference only ids defined in the document, keep artifact locators in evidence, and declare stores, peers, and planned items before referencing them.
+
+### Fixed
+- All scripts read JSON with `utf-8-sig`, so files saved with a byte order mark (PowerShell 5, some Windows editors) no longer crash the validator, scorer, or harness. Found while correcting the v0.3.0 manifest by hand.
+- `run_consistency.py` terminal output says `validator_clean`, matching the report column.
+- Validator: control `covers` now accepts the same references as attack paths (elements, peers, and the subject agent). Previously a control covering a peer agent failed while an attack path through the same peer passed.
+
+### Changed
+- `design/0.4.0-stride-coverage.md`: revised after the baseline. `elements` moved into v0.3.1; v0.4.0 now also proposes an approval volume factor, entry and impact tagging, and held out cases.
+
+## 0.3.0 (2026-10-01)
 
 ### Added
 - `evals/run_skill.py`: runs the skill against every case through the Claude API, saves each assessment, and records a manifest (model, commit, rubric and schema versions). Evaluator notes are stripped from cases before the model sees them. Unparseable output is saved and scored as a failed run.

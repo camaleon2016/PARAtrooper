@@ -139,7 +139,7 @@ def call_model(  # pylint: disable=too-many-arguments,too-many-positional-argume
 def completed(out: Path) -> bool:
     """True when a run file holds a parsed assessment. Failed runs are redone by --resume."""
     try:
-        doc = json.loads(out.read_text(encoding="utf-8"))
+        doc = json.loads(out.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         return False
     return isinstance(doc, dict) and "_parse_error" not in doc
@@ -173,7 +173,7 @@ def write_manifest(args: argparse.Namespace) -> None:
     previous = {}
     if path.exists():
         try:
-            previous = json.loads(path.read_text(encoding="utf-8"))
+            previous = json.loads(path.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError:
             previous = {}
     commit = git_commit()
@@ -236,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
 
     import anthropic  # pylint: disable=import-outside-toplevel
     client = anthropic.Anthropic()
-    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8-sig"))
 
     RUNS.mkdir(parents=True, exist_ok=True)
     write_manifest(args)

@@ -35,7 +35,7 @@ def error_kind(message: str) -> str:
 
 def classify(path: Path, schema: dict) -> tuple[str, list[str]]:
     try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         return "unreadable", [str(exc)]
     if not isinstance(doc, dict):
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--all", action="store_true", help="list every failing run")
     args = ap.parse_args(argv)
-    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8-sig"))
 
     outcomes, kinds, by_case = Counter(), Counter(), {}
     for path in sorted(RUNS.glob(f"*/{RUN_GLOB}")):
