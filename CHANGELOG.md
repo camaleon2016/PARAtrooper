@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## 0.3.1 (2026-10-03)
 
 Schema 0.4.0. Rubric unchanged at 0.2.0. Fixes the schema and validator gaps found by the v0.3.0 baseline (see `evals/RESULTS_NOTES.md`).
 
