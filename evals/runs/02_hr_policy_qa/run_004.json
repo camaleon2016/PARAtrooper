@@ -1,0 +1,371 @@
+{
+  "schema_version": "0.4.0",
+  "assessment": {
+    "assessment_id": "02_hr_policy_qa-run004",
+    "assessed_at": "2026-10-03T05:40:36Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.1",
+      "rubric_version": "0.2.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared_and_discovered",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "tool_manifest",
+        "locator": "tools.json"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "hr-policy-qa",
+    "name": "HR Policy Q&A Agent",
+    "trust_domain": "first_party",
+    "model": {
+      "swappable": false
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.policy_search",
+      "tool_ref": "policy_search.search",
+      "action": "read",
+      "target": "Published HR policy index",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.chat_reply",
+      "action": "send_external",
+      "target": "Authenticated requester's chat session",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": true,
+      "credential_scope": "user_delegated",
+      "maestro_layer": "L4_deployment_infrastructure"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.employee_question",
+      "source": "Authenticated employee question via SSO chat",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.policy_search",
+        "cap.chat_reply"
+      ]
+    },
+    {
+      "input_id": "in.policy_docs",
+      "source": "Published HR policy documents, two-person reviewed before publish, read-only to the agent",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.policy_search",
+        "cap.chat_reply"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": 1,
+    "max_runtime_minutes": 5,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:4",
+      "severity": "low",
+      "note": "The boundary against giving legal advice is enforced only by a prompt instruction, with no technical control behind it. Impact is limited because the agent has no sink beyond a chat reply containing quoted internal policy text, so even a blurred boundary does not open a new attack path."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "el.policy_index",
+      "kind": "data_store",
+      "name": "Published HR policy index",
+      "refs": [
+        "in.policy_docs",
+        "cap.policy_search"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "el.chat_reply_channel",
+      "kind": "data_flow",
+      "name": "Chat reply delivery channel to the authenticated requester",
+      "refs": [
+        "cap.chat_reply"
+      ],
+      "crosses_boundary": true
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "control.read_only_scoped_credential",
+      "name": "Read-only credential scoped to the policy index",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The credential cannot read anything beyond the published policy index regardless of model behavior; scope is enforced by the identity/credential layer, not by the model.",
+      "covers": [
+        "cap.policy_search"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "control.network_egress_denied",
+      "name": "Network-layer egress denial, pen-test verified",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by firewall rules outside the model and verified by pen test, so it does not decay with model capability. It would need a newly approved egress channel (a new tool) to be bypassed.",
+      "covers": [
+        "cap.policy_search"
+      ],
+      "status": "verified",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "severs_path": true
+    },
+    {
+      "control_id": "control.destination_bound_to_session",
+      "name": "Reply destination bound to the authenticated requester's chat session",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The recipient of cap.chat_reply is determined by the system of record (the authenticated session), not chosen by the model, so the model cannot redirect a reply to another destination.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "severs_path": true
+    },
+    {
+      "control_id": "control.no_link_image_rendering",
+      "name": "Chat client does not render images or auto-fetch links",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Removes the classic markdown image/link side channel used for covert exfiltration; enforced by the client rendering logic, not the model. Addresses a different vector than destination routing.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "control.model_pinned_change_ticket",
+      "name": "Model version pinned; upgrades require a change ticket",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Prevents silent model upgrades. Once a ticket is approved, dependent and partially_dependent controls still decay under the new model, so this only delays rather than prevents the model_upgrade trigger.",
+      "covers": [
+        "cap.policy_search",
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "control.two_person_review_publish",
+      "name": "Two-person review required to publish policy content",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Prevents a single actor from poisoning the policy index; enforced by the publishing workflow outside the agent and outside the model.",
+      "covers": [
+        "in.policy_docs"
+      ],
+      "status": "declared",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "control.scope_and_legal_advice_prompt",
+      "name": "System prompt restricts scope to published HR policy and forbids legal advice",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Relies on the model following the instruction; a more capable or adversarially prompted model could reinterpret or ignore the boundary.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "control.sso_authentication",
+      "name": "SSO authentication of the employee chat session",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Ensures the source of in.employee_question is an authenticated, identifiable employee rather than an anonymous or spoofed actor.",
+      "covers": [
+        "in.employee_question"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "control.audit_logging_missing",
+      "name": "Audit logging of search queries and replies",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not described in the artifacts. Would provide attributable, tamper-resistant records of what was searched and answered, supporting repudiation defenses and drift monitoring. Detective only; no tier credit per rubric.",
+      "covers": [
+        "cap.policy_search",
+        "cap.chat_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "finding.policy_quote_reply_egress",
+      "title": "Internal policy content flows from the read-only index to the employee chat reply (bounded egress, destination bound to session)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.policy_docs",
+          "note": "Internal, two-person-reviewed published policy content"
+        },
+        {
+          "ref": "cap.policy_search",
+          "note": "Agent reads matching policy text"
+        },
+        {
+          "ref": "cap.chat_reply",
+          "note": "Agent quotes the policy in a reply that leaves the agent process"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_LLM_TOP10",
+          "id": "LLM06",
+          "name": "Excessive Agency",
+          "framework_edition": "2025"
+        }
+      ],
+      "inherent_risk": "moderate",
+      "residual_risk": "low",
+      "forecast": {
+        "triggers": [
+          "new_tool"
+        ],
+        "failing_controls": [
+          "control.network_egress_denied"
+        ],
+        "projected_risk": "moderate",
+        "watch_signal": "Any new tool, MCP server, or integration added to this agent that can communicate externally (email, chat webhook, ticketing system, etc.) through a destination not bound to the requester's authenticated session. Check tool manifest diffs and MCP client configuration for new entries; a new egress-capable tool is not automatically covered by the existing session-binding or network-egress-denial controls."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes bullet 2",
+          "observation": "The agent's credential is read only and scoped to the policy index, which keeps the source data classified internal and read-only."
+        },
+        {
+          "locator": "runtime notes bullet 3",
+          "observation": "Replies go only to the authenticated requester's chat session, and the chat client does not render images or auto fetch links; this fixes the destination to the system of record rather than letting the model choose it."
+        },
+        {
+          "locator": "runtime notes bullet 4",
+          "observation": "The agent has no other tools, no memory, and no network egress, verified by pen test, which bounds the current attack surface to the single search-then-reply flow."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "The agent is instructed to search and quote policy, or say it does not know and link the HR portal, which is the behavioral layer on top of the structural controls."
+        },
+        {
+          "locator": "assessor judgment",
+          "observation": "cap.chat_reply is scored reversibility: reversible rather than irreversible: an incorrect or incomplete answer can be corrected in a follow-up chat message, and no destructive or financial action occurs. This keeps the sink at S2 (egress of internal data) rather than auto-escalating to S3 purely on irreversibility; documented here per PARA rule 4."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Implement audit logging that records each policy_search query and chat_reply content together with the authenticated employee identity and timestamp, retained per HR audit policy.",
+          "priority": "p3",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AU-10"
+            }
+          ],
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Treat any new tool or integration that can communicate outside the chat session (email, webhook, ticket update, Slack post) as a significant change requiring fresh review before it is added, including an explicit destination-binding or allowlist control equivalent to the one protecting cap.chat_reply today.",
+          "priority": "p2",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "8.2"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "information_disclosure"
+      ],
+      "agentic_class": [],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "unlikely",
+      "consequence": "minor",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "moderate",
+    "residual": "low",
+    "forecast": "moderate",
+    "rationale": "Only one finding reaches moderate or higher: internal, two-person-reviewed policy content read by the agent and quoted back to the requester (I source x S2 sink, since the reply is egress of internal data). No untrusted (U) source exists in this design, the recipient of every reply is fixed to the authenticated requester's own session rather than chosen by the model, the agent holds only a read-only scoped credential, has no other tools, no memory, and no network egress (pen-test verified), and autonomy is bounded to a single search-then-reply turn with no approval gate needed for this low-sensitivity, non-destructive action. The destination-binding control structurally severs this path today (rubric step 1), giving a residual of low. The forecast rises to moderate only under a new_tool trigger: a future tool that communicates externally without inheriting the current session-binding or network-egress-denial controls would reopen a path resembling the lethal trifecta pattern, though the data involved would still be at most internal-sensitivity published policy, not confidential or restricted data, which keeps even the forecast bounded. The prompt-only 'no legal advice' boundary is a minor, instruction-only control but does not by itself move any tier."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in prompt.md, tools.json, and the runtime notes provided, not observed runtime behavior of the deployed agent.",
+    "No machine-readable IaC, MCP config, or logging/audit configuration was provided; autonomy step and runtime bounds (max_unattended_steps, max_runtime_minutes) were inferred from the described single search-then-reply architecture rather than read from a runtime config, which is why finding confidence is high but not based on verified runtime telemetry.",
+    "No audit logging of agent actions was described in the artifacts; this is recorded as a missing recommended detective control (control.audit_logging_missing) rather than as a tier-moving finding, per the rubric.",
+    "The claim that the network egress denial and session-binding facts are structural was taken from prose runtime notes; the pen-test verification claim for network egress denial was taken at face value from the artifact text and not independently re-verified by this assessment."
+  ]
+}

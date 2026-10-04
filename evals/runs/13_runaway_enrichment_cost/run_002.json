@@ -1,0 +1,355 @@
+{
+  "schema_version": "0.4.0",
+  "assessment": {
+    "assessment_id": "13_runaway_enrichment_cost-run002",
+    "assessed_at": "2026-10-03T09:42:39Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.1",
+      "rubric_version": "0.2.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "on_request"
+  },
+  "subject": {
+    "agent_id": "enrichment-agent",
+    "name": "Enrichment Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.enrich_lookup",
+      "tool_ref": "enrich.lookup",
+      "action": "spend",
+      "target": "paid enrichment API (shared monthly quota)",
+      "data_sensitivity": "internal",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.spawn_researcher",
+      "tool_ref": "spawn_researcher_subagent",
+      "action": "delegate",
+      "target": "researcher sub-agent (can itself spawn further researchers)",
+      "data_sensitivity": "internal",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.crm_write",
+      "tool_ref": "crm.write",
+      "action": "write",
+      "target": "CRM account record (industry, size, headquarters fields)",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "unknown",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.crm_rows",
+      "source": "Nightly batch of CRM account rows (40,000 rows/night)",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": true,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:3",
+      "severity": "critical",
+      "note": "'Keep going until every row is complete' sets no limit on retries, runtime, or spawn depth. Combined with the runtime note that ~3% of rows have malformed company names that never return a complete result, this guarantees the loop never terminates for those rows."
+    },
+    {
+      "issue": "ambiguous_goal",
+      "evidence_locator": "prompt.md:2-3",
+      "severity": "high",
+      "note": "'retry, or spawn a researcher sub agent' leaves the choice, count, and depth of retries/spawns entirely to the model, with no stated ceiling, and sub agents can themselves spawn further researchers per the runtime notes."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "store.shared_quota",
+      "kind": "data_store",
+      "name": "Shared enrichment API key and monthly quota",
+      "refs": [
+        "cap.enrich_lookup"
+      ],
+      "is_audit_record": false
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.step_runtime_limit",
+      "name": "Max unattended steps and runtime cap",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "An orchestrator-enforced step/runtime ceiling does not depend on the model choosing to stop.",
+      "covers": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.retry_limit",
+      "name": "Per-row retry limit on enrich.lookup",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A retry counter enforced outside the model stops the loop regardless of model behavior.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.spawn_depth_limit",
+      "name": "Sub-agent spawn depth and count limit",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A hard cap on delegation depth/fan-out enforced by the spawning mechanism itself does not decay with model capability.",
+      "covers": [
+        "cap.spawn_researcher"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.spend_cap",
+      "name": "Hard spend cap on enrichment API usage",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A billing-side hard stop is enforced by the API provider/finance layer, not the model.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.spend_alert",
+      "name": "Real-time spend alert on the enrichment account",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Monitoring infrastructure independent of the model; currently absent per runtime notes.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability"
+    },
+    {
+      "control_id": "ctrl.dedicated_quota",
+      "name": "Dedicated API key/quota separate from sales and marketing",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Isolating the credential and budget at the infrastructure/identity layer removes the shared blast radius regardless of model behavior.",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f1.spend_loop_cascading_failure",
+      "title": "TC6 Spend loop / cascading failure: malformed CRM rows trigger unbounded retries and sub-agent spawning against a billed, shared-quota API",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Nightly batch of 40,000 rows; ~3% have malformed company names that never return a complete result"
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Billed per call; a failed/incomplete lookup triggers retry or spawn per prompt.md:2"
+        },
+        {
+          "ref": "cap.spawn_researcher",
+          "note": "Spawns a researcher sub-agent, which can itself spawn further researchers with no stated depth limit"
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Each spawned researcher again invokes the billed enrich.lookup call"
+        },
+        {
+          "ref": "store.shared_quota",
+          "note": "All calls draw against the same monthly quota shared with sales and marketing tools"
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "store.shared_quota"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-3",
+          "observation": "Instructs the agent to retry or spawn a researcher sub-agent and 'keep going until every row is complete,' with no stated limit on retries or spawn depth."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "'There is no maximum on steps, runtime, retries, or sub agents. Sub agents can spawn their own researchers.'"
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "'enrich.lookup is billed per call. The API key and its monthly quota are shared with the sales and marketing teams; when the quota runs out, their tools stop working until the next month.'"
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "'Roughly 3 percent of rows have malformed company names that never return a complete result,' which guarantees the 'until every row is complete' loop never terminates for those rows."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "'There is no spend alert on the enrichment account.'"
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Enforce a hard orchestrator-level cap on steps, runtime, retries per row, and sub-agent spawn depth/count; do not rely on the prompt to self-limit.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Give the enrichment agent a dedicated API key and quota separate from sales and marketing, or reserve a fixed sub-budget, so a runaway loop cannot take down other teams' tools.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add a real-time spend alert and dashboard on the enrichment account's billing.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Revise the prompt to cap retries per row (e.g., 2) and route unresolved/malformed rows to a 'needs manual review' queue instead of looping indefinitely.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "denial_of_service",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "cascading_failure",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        },
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "The only finding (f1) reaches an S3 sink (spend via cap.enrich_lookup, and delegate via cap.spawn_researcher) from an internal source, with the A4/can_spawn_agents autonomy modifier applied once, giving inherent = critical. No declared or verified controls exist on this path (all recommended controls are status: missing_recommended), so no rubric section 5 credit applies and residual remains critical. Because the tier is already at the ceiling, no forecast trigger can raise it further; forecast = critical. The single most consequential missing control is the orchestrator-level step/runtime/retry/spawn cap (ctrl.step_runtime_limit and ctrl.retry_limit), since the 3% malformed-row rate makes the 'until complete' loop a near-certainty rather than a hypothetical, and the shared quota (store.shared_quota) turns a cost problem into a denial of service against sales and marketing."
+  },
+  "limitations": [
+    "This assessment reflects the declared design in prompt.md and the accompanying runtime notes, not observed runtime behavior or logs of actual nightly runs.",
+    "No tool manifest or MCP/API configuration was provided; the scope and authentication of cap.enrich_lookup and cap.spawn_researcher are inferred from prose, which lowers confidence on exact credential handling.",
+    "No information was given on what credentials or quota a spawned researcher sub-agent inherits; credential_scope for cap.spawn_researcher is assumed to mirror the shared service account used by cap.enrich_lookup.",
+    "No information was given on whether cap.crm_write ever receives partial or malformed enrichment data; this path was inventoried but not scored as a separate finding due to insufficient evidence."
+  ]
+}
