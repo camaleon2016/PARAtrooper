@@ -1,0 +1,404 @@
+{
+  "schema_version": "0.4.0",
+  "assessment": {
+    "assessment_id": "02_hr_policy_qa-run000",
+    "assessed_at": "2026-10-03T05:22:50Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.1",
+      "rubric_version": "0.2.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "tool_manifest",
+        "locator": "tools.json"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "hr-policy-qa",
+    "name": "HR Policy Q&A Agent",
+    "trust_domain": "first_party",
+    "model": {
+      "swappable": false
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.policy_search",
+      "tool_ref": "policy_search.search",
+      "action": "read",
+      "target": "HR policy search index (published policies only)",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.chat_reply",
+      "action": "send_external",
+      "target": "authenticated employee's own chat session",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": true,
+      "credential_scope": "user_delegated",
+      "maestro_layer": "L4_deployment_infrastructure"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.employee_question",
+      "source": "Employee question via SSO authenticated chat",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.policy_search"
+      ]
+    },
+    {
+      "input_id": "in.policy_docs",
+      "source": "HR maintained published policy documents, read only to the agent, two person review required to publish",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.policy_search"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:4",
+      "severity": "low",
+      "note": "The only control preventing the agent from giving legal advice is a prompt instruction (behavioral, dependent). Severity is low because the data in scope is published, internal-sensitivity HR policy and all actions are reversible, so the consequence of a lapse is limited even though the control would decay under model_upgrade."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "store.policy_index",
+      "kind": "data_store",
+      "name": "HR policy search index (published policies only)",
+      "refs": [
+        "in.policy_docs",
+        "cap.policy_search"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "ext.employee_chat_session",
+      "kind": "external_entity",
+      "name": "Authenticated employee chat session (SSO)",
+      "refs": [
+        "cap.chat_reply",
+        "in.employee_question"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.least_privilege_credential",
+      "name": "Read-only credential scoped to the policy index",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The credential cannot write, delete, or reach anything beyond the policy index, regardless of model behavior. It fails only if the scope is later widened (data_scope_expansion) or the restriction is lifted (control_removal).",
+      "covers": [
+        "cap.policy_search"
+      ],
+      "status": "declared",
+      "maestro_layer": "L2_data_operations",
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AC-6"
+        }
+      ]
+    },
+    {
+      "control_id": "ctrl.network_egress_denied",
+      "name": "Network egress denied at the network layer, pen tested",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The agent has no other tools and no network egress, verified by a pen test. This closes exfiltration channels outside the single reply path regardless of model capability. Fails only via control_removal, or if a new_tool or new_mcp_server later reintroduces egress.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "verified",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.destination_bound_to_session",
+      "name": "Reply destination bound to the authenticated requester's own session",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The destination of every reply is the requester's own authenticated session, taken from the system of record, not chosen by the model. Does not decay with model capability.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.no_image_link_rendering",
+      "name": "Chat client does not render images or auto-fetch links",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Closes the common image or link based side-channel exfiltration method regardless of model behavior, since the rendering surface itself is absent.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.two_person_review_publish",
+      "name": "Two person review required to publish to the policy index",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A human governance process gates what enters the index the agent reads from; it does not depend on model capability. Fails only if the review requirement is removed (control_removal).",
+      "covers": [
+        "in.policy_docs"
+      ],
+      "status": "declared",
+      "maestro_layer": "L2_data_operations",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.7"
+        }
+      ]
+    },
+    {
+      "control_id": "ctrl.model_pinned_change_ticket",
+      "name": "Model version pinned, change ticket required to upgrade",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Raises the bar for the model_upgrade trigger by requiring a change ticket, so the trigger cannot occur silently; does not prevent it once approved.",
+      "status": "declared",
+      "maestro_layer": "L1_foundation_models"
+    },
+    {
+      "control_id": "ctrl.no_legal_advice_instruction",
+      "name": "Prompt instruction: do not give legal advice",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Relies on the model choosing to follow the instruction; a more capable or adversarially prompted model could rationalize an exception.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "F1-employee-question-path",
+      "title": "Authenticated employee question routed through read-only search to a session-bound reply (T to S2)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.employee_question"
+        },
+        {
+          "ref": "cap.policy_search"
+        },
+        {
+          "ref": "cap.chat_reply"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        }
+      ],
+      "inherent_risk": "low",
+      "residual_risk": "low",
+      "forecast": {
+        "triggers": [
+          "data_scope_expansion"
+        ],
+        "failing_controls": [
+          "ctrl.least_privilege_credential"
+        ],
+        "projected_risk": "moderate",
+        "watch_signal": "The policy search index begins ingesting confidential or restricted HR content (for example compensation, medical, or legal matters), or the agent's credential scope is broadened beyond the published policy index."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "tools.json",
+          "observation": "policy_search.search is the only tool; input schema is a single free-text query string with no write or delete capability."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Credential is read only and scoped to the policy index; replies go only to the authenticated requester's own session; chat client does not render images or auto-fetch links; no other tools, memory, or network egress, verified by pen test."
+        },
+        {
+          "locator": "prompt.md:1-2",
+          "observation": "Agent's declared purpose is bounded to answering questions about published Acme HR policies using policy_search."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add immutable logging of policy_search queries and chat replies, retained for a fixed period, to support traceability if the policy index scope later expands.",
+          "priority": "p3",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.8"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Independently verify, not just declare, that the policy_search credential is read only and scoped solely to the published policy index, and add this check to periodic access reviews.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "unlikely",
+      "consequence": "minor",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "F2-policy-docs-quoted-to-employee",
+      "title": "HR-authored policy content reaches the employee reply, gated only by human publish review (I to S2)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.policy_docs"
+        },
+        {
+          "ref": "cap.policy_search"
+        },
+        {
+          "ref": "cap.chat_reply"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI06",
+          "name": "Memory and Context Poisoning",
+          "framework_edition": "2026"
+        }
+      ],
+      "inherent_risk": "moderate",
+      "residual_risk": "low",
+      "forecast": {
+        "triggers": [
+          "control_removal"
+        ],
+        "failing_controls": [
+          "ctrl.two_person_review_publish"
+        ],
+        "projected_risk": "moderate",
+        "watch_signal": "The two person review requirement for publishing to the policy index is relaxed, removed, or bypassed, for example by an emergency publish path with no secondary reviewer."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "Only the HR content team can write to the policy index, and publishing requires two person review; data sensitivity of the index is internal."
+        },
+        {
+          "locator": "prompt.md:2",
+          "observation": "Agent is instructed to quote the relevant policy verbatim, so index content passes through to the reply largely unfiltered by the model."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Tag policy index entries with their two person review approval status so a downstream check can refuse to quote content missing that provenance.",
+          "priority": "p3",
+          "audience": "developer"
+        },
+        {
+          "category": "corrective",
+          "mechanism": "behavioral",
+          "action": "Treat any relaxation of the two person publish review as a significant change under ISO 42001 8.2 and trigger reassessment of this finding before the relaxed process goes live.",
+          "priority": "p2",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "8.2"
+            }
+          ]
+        }
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "unlikely",
+      "consequence": "minor",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "moderate",
+    "residual": "low",
+    "forecast": "moderate",
+    "rationale": "Two findings were assessed, both from benign sources (a trusted authenticated employee question, and internal HR-authored policy content) into a sink that is at most S2 (internal-sensitivity data sent only to the requester's own authenticated session). Neither finding involves an untrusted (U) source, execute, spend, delete, delegate, or configure capability, memory, or inter-agent communication, so none of the toxic combination patterns TC1 through TC9 apply; both findings were filed because their inherent tiers (low and moderate) meet the rubric's filing threshold. Strong, largely structural and independent controls (a least-privilege read-only credential, network egress denied and pen tested, a reply destination bound to the requester's own session, a chat client that does not render images or links, and two person human review before anything is published to the index) bring residual risk down to low for both findings. The forecast rises back to moderate under two distinct triggers: data_scope_expansion, which would widen the least-privilege credential's scope and could raise the sink to S3 if confidential or restricted content enters the index (finding F1); and control_removal, which would remove two person publish review and return finding F2 to its moderate inherent tier. Of these, data_scope_expansion is the more consequential single trigger to watch, since it affects the higher-traffic employee-question path and simultaneously elevates data sensitivity and credential scope together."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration described in the provided artifacts (system prompt, tool manifest, and runtime notes), not observed runtime behavior. No live testing, log review, or red-team exercise was performed as part of this assessment.",
+    "No MCP configuration, agent card, or infrastructure-as-code was provided; the single tool policy_search.search in tools.json is treated as the complete capability surface, so confidence on capability scope is medium rather than high.",
+    "Credential scoping, session-binding, and image/link rendering restrictions are described as declared rather than independently verified; only the network egress denial is stated to have been verified by a pen test. If the declared controls are aspirational rather than enforced, residual risk for both findings would be higher than reported.",
+    "No information was provided on logging, monitoring, or an audit trail beyond what is suggested in the recommendations; the absence of a confirmed audit record is treated as an open gap rather than a verified control."
+  ]
+}
