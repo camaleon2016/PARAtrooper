@@ -101,14 +101,29 @@ def score_run(doc: dict, exp: dict, schema: dict) -> dict:
         "in_range": in_range,
         "recall": hits / total if total else 1.0,
         "false_positives": fp,
+        "main_path_residual": main_path_residual(findings, req_paths),
     }
+
+
+def main_path_residual(findings: list[dict], req_paths: list[list[str]]) -> str | None:
+    """Residual of the present finding that contains the case's first required path.
+
+    The rating rollup takes the worst finding, so extra secondary findings can move it between runs
+    even when every run rates the main path the same. This isolates the main path.
+    """
+    for req in req_paths[:1]:
+        for f in findings:
+            refs = [s.get("ref") for s in f.get("attack_path", [])]
+            if f.get("horizon") == "present" and all(r in refs for r in req):
+                return f.get("residual_risk")
+    return None
 
 
 def invalid_result(reason: str) -> dict:
     return {
         "valid": False, "errors": 1, "warnings": 0, "error_detail": reason,
         "rating": {k: None for k in FIELDS}, "in_range": {k: False for k in FIELDS},
-        "recall": 0.0, "false_positives": 0,
+        "recall": 0.0, "false_positives": 0, "main_path_residual": None,
     }
 
 
@@ -136,6 +151,8 @@ def case_stats(results: list[dict]) -> dict:
         counts = Counter(r["rating"][k] for r in results)
         mode, mode_n = counts.most_common(1)[0]
         stats[k] = {"mode": mode, "agreement": mode_n / n, "in_range": sum(r["in_range"][k] for r in results) / n}
+    main = [r.get("main_path_residual") for r in results]
+    stats["main_path_residual"] = (Counter(main).most_common(1)[0][1] / n) if any(main) else None
     return stats
 
 
@@ -156,16 +173,20 @@ def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict) -
     """Summary table suitable for publishing in the README or a release."""
     lines = ["# PARA eval results", "",
              "Validator clean means the assessment parsed, matched the schema, and passed every rubric "
-             "consistency check in scripts/validate.py with zero errors.", ""]
+             "consistency check in scripts/validate.py with zero errors. Residual agreement is on the "
+             "rating rollup (the worst finding); main path residual agreement is on the finding that "
+             "contains the case's required attack path.", ""]
     if meta:
         lines += [f"- {k}: {v}" for k, v in meta.items()] + [""]
     head = "| Case | Kind | Runs | Validator clean | Recall | " + " | ".join(
-        f"{k.capitalize()} agreement / in range" for k in FIELDS) + " | False positives |"
-    lines += [head, "|" + "---|" * (6 + len(FIELDS))]
+        f"{k.capitalize()} agreement / in range" for k in FIELDS) + " | Main path residual agreement | False positives |"
+    lines += [head, "|" + "---|" * (7 + len(FIELDS))]
     for case_id, s in stats.items():
         cells = " | ".join(f"{s[k]['agreement']:.0%} / {s[k]['in_range']:.0%}" for k in FIELDS)
+        main = s.get("main_path_residual")
+        main_cell = f"{main:.0%}" if main is not None else "n/a"
         lines.append(f"| {case_id} | {kinds.get(case_id, '')} | {s['runs']} | {s['valid']:.0%} | "
-                     f"{s['recall']:.0%} | {cells} | {s['false_positives']} |")
+                     f"{s['recall']:.0%} | {cells} | {main_cell} | {s['false_positives']} |")
     if stats:
         total_runs = sum(s["runs"] for s in stats.values())
         def weighted(key):
@@ -208,6 +229,9 @@ def summarize(case_id: str, results: list[dict], min_agreement: float) -> tuple[
     valid = sum(r["valid"] for r in results) / n
     fp = sum(r["false_positives"] for r in results)
     ok &= valid == 1 and fp == 0
+    main = [r.get("main_path_residual") for r in results]
+    if any(main):
+        lines.append(f"  main path residual dist={dict(Counter(main))}")
     lines.append(f"  recall={recall:.2f} validator_clean={valid:.2f} false_positives={fp}")
     return lines, ok
 

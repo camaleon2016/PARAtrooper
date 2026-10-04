@@ -365,7 +365,7 @@ def test_run_skill_end_to_end_with_stubbed_model(tmp_path, monkeypatch):
     assert [p.name for p in sorted((tmp_path / "01_support_triage").glob(run_consistency.RUN_GLOB))] == [
         "run_000.json", "run_001.json"]
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["model"] == "test-model" and manifest["rubric_version"] == "0.2.0"
+    assert manifest["model"] == "test-model" and manifest["rubric_version"] == run_skill.rubric_version()
 
 
 def test_required_stride_categories_scoring():
@@ -494,3 +494,39 @@ def test_json_inputs_tolerate_byte_order_mark(tmp_path):
     assert validate.main([str(doc_path), "--strict"]) == 0
     exp = json.loads((ROOT / "evals" / "expected" / "01_support_triage.expected.json").read_text(encoding="utf-8"))
     assert run_consistency.score_file(doc_path, exp, SCHEMA)["valid"] is True
+
+
+def test_element_may_link_to_peer_with_same_id():
+    # v0.3.1 batch: runs declared an element named after the protocol peer and linked it to the peer.
+    doc = example()
+    doc["elements"].append({"element_id": "mail_mcp", "kind": "process", "refs": ["mail_mcp"]})
+    errors, _ = run(doc)
+    assert not has(errors, "refs unknown id")
+    doc["elements"].append({"element_id": "store.loop", "kind": "data_store", "refs": ["store.loop"]})
+    errors, _ = run(doc)
+    assert has(errors, "elements/store.loop: refs unknown id 'store.loop'")
+
+
+def test_residual_above_floor_needs_rationale():
+    doc = example()
+    doc["findings"][0]["residual_risk"] = "critical"
+    doc["rating"]["residual"] = "critical"
+    _, warnings = run(doc)
+    assert has(warnings, "above the rubric floor ('high') with no residual_rationale")
+    doc["findings"][0]["residual_rationale"] = "Recipient field is model chosen, so logging only detects after the fact."
+    _, warnings = run(doc)
+    assert not has(warnings, "residual_rationale")
+
+
+def test_main_path_residual_is_isolated_from_rollup():
+    exp = json.loads((ROOT / "evals" / "expected" / "01_support_triage.expected.json").read_text(encoding="utf-8"))
+    doc = example()
+    extra = json.loads(json.dumps(doc["findings"][0]))
+    extra.update({"finding_id": "f.other", "residual_risk": "critical", "attack_path": [{"ref": "cap.email_send"}]})
+    doc["findings"].append(extra)
+    doc["rating"]["residual"] = "critical"
+    result = run_consistency.score_run(doc, exp, SCHEMA)
+    assert result["rating"]["residual"] == "critical"
+    assert result["main_path_residual"] == "high"
+    stats = run_consistency.case_stats([result, run_consistency.score_run(example(), exp, SCHEMA)])
+    assert stats["residual"]["agreement"] == 0.5 and stats["main_path_residual"] == 1.0
