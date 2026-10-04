@@ -163,9 +163,13 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
     known_refs |= {p["peer_ref"] for p in doc.get("protocols", [])}
     planned = {i for i, item in {**caps, **inputs, **elements}.items() if item.get("planned")}
 
+    # An element may share its id with a protocol peer or the subject agent and link to it; any
+    # other self reference is circular.
+    linkable_self = {p["peer_ref"] for p in doc.get("protocols", [])} | {doc["subject"]["agent_id"]}
     for el in elements.values():
         for ref in el.get("refs", []):
-            if ref not in known_refs or ref == el["element_id"]:
+            circular = ref == el["element_id"] and ref not in linkable_self
+            if ref not in known_refs or circular:
                 errors.append(f"elements/{el['element_id']}: refs unknown id '{ref}'")
 
     for inp in doc["inputs"]:
@@ -251,6 +255,11 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
             floor = residual_floor(f, caps, controls)
             if RANK[f["residual_risk"]] < RANK[floor]:
                 warnings.append(f"{fid}: residual '{f['residual_risk']}' is below what path controls can justify ('{floor}')")
+            elif RANK[f["residual_risk"]] > RANK[floor] and not f.get("residual_rationale"):
+                warnings.append(
+                    f"{fid}: residual '{f['residual_risk']}' is above the rubric floor ('{floor}') with no "
+                    "residual_rationale (rubric section 5)"
+                )
         if not f.get("recommendations") and RANK[f["residual_risk"]] >= RANK["moderate"]:
             warnings.append(f"{fid}: residual {f['residual_risk']} with no recommendations")
         if f.get("treatment", {}).get("option") == "accept" and not f["treatment"].get("approved_by"):

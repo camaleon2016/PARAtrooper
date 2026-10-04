@@ -1,6 +1,27 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## 0.3.2 (unreleased)
+
+Schema 0.5.0. Rubric 0.2.1. Fixes found by the v0.3.1 batch and its residual diagnosis (see `evals/archive/0.3.1/RESULTS_NOTES.md`).
+
+### Fixed
+- Validator: an element may link to a protocol peer or the subject agent that shares its id. v0.3.1 rejected this, failing 2 runs.
+
+### Changed
+- Rubric 0.2.1, section 5: residual equals the floor the control credits produce. A higher residual requires `residual_rationale` naming the design fact the classifications cannot express. In v0.3.1, five runs raised residual above the floor without saying why, which lowered agreement.
+- `control_decay.md`: every human approval gate must be wired through `approval_gate_ref`, and an approval granted once and then remembered is not a gate (no credit).
+- SKILL.md:
+  - record every control the artifacts mention, including weak ones
+  - omit optional fields instead of writing `null`
+  - escape quotes in evidence, and prefer paraphrase to long quotes
+
+### Added
+- Schema: `findings[].residual_rationale`.
+- Validator warning when residual is above the floor without a rationale.
+- Report: a main path residual agreement column, measured on the finding that contains each case's required attack path. The rollup takes the worst finding, so secondary findings can move it even when the main path is stable.
+- `evals/compare_residuals.py`: shows which controls each run credited on the main path, and the rubric floor they allow.
+
+## 0.3.1 (2026-10-02)
 
 Schema 0.4.0. Rubric unchanged at 0.2.0. Fixes the schema and validator gaps found by the v0.3.0 baseline (see `evals/RESULTS_NOTES.md`).
 

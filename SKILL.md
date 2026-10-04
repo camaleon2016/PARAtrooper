@@ -67,6 +67,8 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 - For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary`. If the approver sees arguments only behind a collapsed link, use `model_summary`.
 - Set `severs_path: true` only on a structural, independent, preventive control that makes the sink unreachable under any model behavior, and cite the evidence for that claim in the finding. A control that only narrows the path does not sever it.
 - Add `missing_recommended` controls where a structural control would sever a path.
+- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result.
+- Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
 ### 8. Find attack paths
 
@@ -76,7 +78,7 @@ Load `references/toxic_combinations.md` and follow its search procedure. `toxic_
 
 Load `references/rubric.md`. For each finding:
 1. Compute inherent (sections 4 and 3).
-2. Apply control credits in order to get residual (section 5).
+2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`.
 3. Choose the applicable triggers, remove the controls those triggers defeat, and recompute to get `forecast.projected_risk` (section 6). Set `watch_signal`.
 4. Set `likelihood`, `consequence`, and `confidence` (sections 8 and 9).
 
@@ -84,7 +86,7 @@ Roll up to `rating` (section 7). Add structural recommendations first. Set `trea
 
 ### 10. Emit and validate
 
-1. Write the JSON.
+1. Write the JSON. Omit optional fields you have no value for instead of writing `null` (for example, leave out `forecast` rather than setting it to `null`). When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
 2. Run `python scripts/validate.py <file>`. Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
 3. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
 

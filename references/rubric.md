@@ -1,6 +1,6 @@
 # PARA Rubric
 
-Rubric version: 0.2.0. Applies to schema 0.3.x.
+Rubric version: 0.2.1. Applies to schema 0.5.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -92,7 +92,11 @@ The `partially_dependent` structural controls (for example, a tool allowlist tha
 
 The approval gate floor applies to the final residual, after steps 3 and 4. Stacking other controls on top of a summary gate cannot push the residual below `moderate`, because the approver is still deciding on the model's description of the action.
 
-`scripts/validate.py` computes the lowest residual these credits can justify and warns when a document claims less.
+**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`. Never rate residual below the floor.
+
+`scripts/validate.py` computes the floor from the controls on the path. It warns when a document claims less, and when a document claims more without a `residual_rationale`.
+
+The v0.3.1 eval batch showed why this rule exists: every run kept residual at or above the floor, but some runs raised it by unstated judgment, so runs of the same design disagreed. Stating the reason makes the disagreement reviewable.
 
 **Worked example** (`examples/support_agent.assessment.json`): the untrusted email reaches CRM read and then email send. The sink is S3 (irreversible egress of confidential data). Inherent is `critical`. The only preventive control is a prompt rule (behavioral, dependent), so step 4 applies: -1 gives a residual of `high`. Outbound logging is detective, so it gets no tier credit.
 

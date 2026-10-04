@@ -68,7 +68,10 @@ Run outputs in `evals/runs/` are committed with each published result so reviewe
 
 ## Results
 
-The latest batch is in [evals/RESULTS.md](evals/RESULTS.md). Each released batch is archived with its run files and notes under `evals/archive/<version>/`; the v0.3.0 baseline, including the two public incident backtests, is in [evals/archive/0.3.0/](evals/archive/0.3.0/) with [notes](evals/archive/0.3.0/RESULTS_NOTES.md) on how it was run, why some runs were not validator clean, and the known limitations it shows.
+The latest batch is in [evals/RESULTS.md](evals/RESULTS.md). Each released batch is archived with its run files and notes under `evals/archive/<version>/`:
+
+- [v0.3.0 baseline](evals/archive/0.3.0/), including the two public incident backtests, with [notes](evals/archive/0.3.0/RESULTS_NOTES.md)
+- [v0.3.1](evals/archive/0.3.1/), with [notes](evals/archive/0.3.1/RESULTS_NOTES.md) and the residual agreement diagnosis
 
 ## Status
 

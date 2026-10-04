@@ -44,6 +44,10 @@ Scoring (schema 0.3.0 and later):
 - If the design implies high approval volume, list `autonomy_increase` and `longer_task_horizon` as triggers and name the gate in `failing_controls`. Put the volume assumption in `watch_signal`. Volume itself is not yet a schema field; it stays in evidence and `watch_signal`.
 - A per call prompt that shows arguments only behind a collapsed link is `model_summary` in practice. Evals 10 and 11 are public incidents where this gate failed.
 
+Wiring and remembered approvals:
+- **Wire every gate.** A human approval control that gates a capability must be named in that capability's `approval_gate_ref`. Listing it only in `covers` earns step 3 credit instead of step 2, and runs that wire it differently will disagree on residual.
+- **A remembered approval is not a gate.** When approval is granted once and then remembered ("always allow," approve once per session or per tool), later calls are not reviewed at all. Record the control so reviewers see it, but do not set it as `approval_gate_ref`, leave its `covers` empty, and say in `decay_rationale` that later calls are unreviewed. It earns no credit.
+
 ## Forecast triggers and watch signals
 
 These double as the ISO/IEC 42001 8.2 significant change criteria. Any trigger that occurs means the assessment must be run again.
