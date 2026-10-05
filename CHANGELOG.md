@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.3 (unreleased)
+## 0.3.3 (2026-10-05)
 
 Schema 0.5.0. Rubric 0.2.2. Includes every 0.3.2 change.
 
