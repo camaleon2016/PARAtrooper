@@ -1,0 +1,320 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "02_hr_policy_qa-run003",
+    "assessed_at": "2026-10-04T08:41:55Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.2",
+      "rubric_version": "0.2.1",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "tool_manifest",
+        "locator": "tools.json"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "hr-policy-qa",
+    "name": "HR Policy Q&A Agent",
+    "trust_domain": "first_party",
+    "model": {
+      "swappable": false
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.policy_search",
+      "tool_ref": "policy_search.search",
+      "action": "read",
+      "target": "HR policy search index (published policies only)",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.chat_reply",
+      "tool_ref": "chat client reply channel",
+      "action": "send_external",
+      "target": "authenticated requester's chat session",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": true,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.employee_question",
+      "source": "Employee question via SSO-authenticated chat session",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.policy_search",
+        "cap.chat_reply"
+      ]
+    },
+    {
+      "input_id": "in.policy_docs",
+      "source": "Published HR policy documents, HR content team authored, two-person review before publish, read-only to the agent",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.chat_reply"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:4",
+      "severity": "low",
+      "note": "\"Do not give legal advice\" is enforced only by model instruction, with no structural check (classifier, filter, or review) on replies before they reach the employee. Low severity because the sink has no S3 capability and no sensitive data beyond published policy text."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "elem.policy_index",
+      "kind": "data_store",
+      "name": "HR policy search index",
+      "refs": [
+        "cap.policy_search",
+        "in.policy_docs"
+      ],
+      "is_audit_record": false
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.scoped_credential",
+      "name": "Read-only credential scoped to the policy index",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The credential is read-only and scoped only to the published policy index; it cannot be used to reach other systems or data regardless of model behavior.",
+      "covers": [
+        "cap.policy_search"
+      ],
+      "status": "declared",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctrl.network_egress_denied",
+      "name": "Network-layer egress denial, verified by penetration test",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced at the network layer, outside the model and application, and verified by a pen test. No model behavior can open an outbound channel that the network does not permit.",
+      "covers": [
+        "cap.policy_search",
+        "cap.chat_reply"
+      ],
+      "status": "verified",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctrl.recipient_binding",
+      "name": "Reply destination bound to the authenticated requester's session",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The reply destination is the authenticated session of record, not a model-supplied address, so the model cannot redirect the reply to a different recipient. This is the destination-confirmation pattern that does not decay with model capability, and fails only if its enforcement is removed.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctrl.no_render_chat_client",
+      "name": "Chat client does not render images or auto-fetch links",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Closes the covert image/link rendering exfiltration channel; reply content cannot trigger an out-of-band fetch regardless of what the model writes.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.policy_publish_review",
+      "name": "Two-person review required to publish to the policy index; write restricted to HR content team",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by the publishing workflow, outside the agent and the model. A single careless or compromised author cannot get content into the index the agent treats as policy.",
+      "covers": [
+        "in.policy_docs"
+      ],
+      "status": "declared",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctrl.model_pinned",
+      "name": "Model version pinned; upgrade requires a change ticket",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "Pinning stops silent capability growth, but the gate is a change-management process rather than a technical barrier, and once a ticket is approved, dependent controls still weaken under the new model.",
+      "covers": [
+        "cap.policy_search",
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L1_foundation_models"
+    },
+    {
+      "control_id": "ctrl.prompt_instructions",
+      "name": "System prompt: quote policy, disclose when unanswered, no legal advice",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "These are instructions only. A sufficiently persuaded or manipulated model can omit the required disclaimer or stray into legal-advice-like answers.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L1_foundation_models"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f1",
+      "title": "Internal policy content reaches the requester through a path with no untrusted source but a structurally bound destination",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.policy_docs",
+          "note": "Internally authored, two-person reviewed policy content"
+        },
+        {
+          "ref": "cap.policy_search",
+          "note": "Read-only retrieval scoped to the policy index"
+        },
+        {
+          "ref": "cap.chat_reply",
+          "note": "Delivered back to the authenticated requester's session"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI06",
+          "name": "Memory and Context Poisoning",
+          "framework_edition": "2026"
+        }
+      ],
+      "inherent_risk": "moderate",
+      "residual_risk": "low",
+      "forecast": {
+        "triggers": [
+          "control_removal"
+        ],
+        "failing_controls": [
+          "ctrl.recipient_binding"
+        ],
+        "projected_risk": "low",
+        "watch_signal": "A chat-delivery configuration change that lets the model or a config flag set or override the reply recipient, or any removal of destination-binding enforcement. Monitor config diffs on the chat delivery layer. Even if this control fails, the scoped read-only credential and no-render client keep the floor at low, so this is the control to watch rather than an urgent gap."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes:1",
+          "observation": "Policy index holds only published policies; data sensitivity internal; write restricted to HR content team with two-person review before publish."
+        },
+        {
+          "locator": "runtime notes:2",
+          "observation": "Agent credential is read-only and scoped to the policy index."
+        },
+        {
+          "locator": "runtime notes:3",
+          "observation": "Replies go only to the authenticated requester's chat session; the chat client does not render images or auto-fetch links."
+        },
+        {
+          "locator": "runtime notes:4",
+          "observation": "No other tools, no memory, no network egress; egress denied at the network layer and verified by a pen test."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "Agent is instructed to quote policy text and disclose when the policy does not answer the question."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Log policy_search queries and chat replies as an audit record tied to the requester identity, to support monitoring for off-policy or anomalous answers.",
+          "priority": "p3",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a publish-time content check on policy index entries for embedded instructions aimed at an AI reader (prompt-injection-style text), in addition to the existing two-person human review.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "information_disclosure",
+        "tampering"
+      ],
+      "agentic_class": [
+        "memory_poisoning"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.7",
+          "note": "Data for AI systems: integrity of content the agent treats as authoritative."
+        }
+      ],
+      "likelihood": "unlikely",
+      "consequence": "minor",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "moderate",
+    "residual": "low",
+    "forecast": "low",
+    "rationale": "The design has no untrusted (U) source anywhere: employee questions arrive over an authenticated channel (trusted) and the only other input is HR policy content that is two-person reviewed before publish (internal). The only path of consequence is internal policy content, read with a least-privilege credential, delivered to a reply destination that is bound to the authenticated session of record rather than chosen by the model. That destination-binding control is structural and independent, so residual drops to the floor of low under rubric section 5 step 1. No approval gate is declared or needed because no S3 capability exists. Forecasting against control_removal on the destination-binding control (the single highest-value control to watch) still floors at low because the read-only credential scope, network egress denial, and non-rendering chat client are redundant independent structural controls that do not depend on it. The main residual exposure is instruction-only enforcement of 'no legal advice' and a modest insider/supply-chain risk if the two-person review process itself is subverted; both are recorded but do not raise the tier above moderate inherent."
+  },
+  "limitations": [
+    "This assessment reflects declared design and configuration as described in the provided artifacts, not observed runtime behavior; no logs or live testing were reviewed.",
+    "autonomy.max_unattended_steps and autonomy.max_runtime_minutes are not declared in the artifacts. The design is inferred to be a single-turn, single-tool-call pattern from the system prompt and runtime notes, and the autonomy modifier in rubric section 4 was not applied on that basis; this is a judgment call rather than a verified limit, which lowers confidence on the inherent-risk computation.",
+    "No MCP configuration was provided; tool definition pinning/hashing status for policy_search.search is unknown, though the design exposes only one tool and no other MCP servers or peer agents.",
+    "Validation against scripts/validate.py was performed manually in this environment; the script itself was not executed."
+  ]
+}

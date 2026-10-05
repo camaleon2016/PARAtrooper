@@ -79,14 +79,14 @@ Load `references/toxic_combinations.md` and follow its search procedure. `toxic_
 Load `references/rubric.md`. For each finding:
 1. Compute inherent (sections 4 and 3).
 2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`.
-3. Choose the applicable triggers, remove the controls those triggers defeat, and recompute to get `forecast.projected_risk` (section 6). Set `watch_signal`.
+3. For **every** finding, choose the applicable triggers, remove the controls those triggers defeat, and recompute to get `forecast.projected_risk` (section 6). Set `watch_signal`. If no trigger changes the tier, record the triggers you considered with `projected_risk` equal to `residual_risk`; never leave the forecast out.
 4. Set `likelihood`, `consequence`, and `confidence` (sections 8 and 9).
 
 Roll up to `rating` (section 7). Add structural recommendations first. Set `treatment.option: pending` unless the user has supplied a treatment decision.
 
 ### 10. Emit and validate
 
-1. Write the JSON. Omit optional fields you have no value for instead of writing `null` (for example, leave out `forecast` rather than setting it to `null`). When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
+1. Write the JSON. Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
 2. Run `python scripts/validate.py <file>`. Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
 3. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
 

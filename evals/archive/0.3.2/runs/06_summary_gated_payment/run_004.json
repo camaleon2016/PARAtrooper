@@ -1,0 +1,401 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "06_summary_gated_payment-run004",
+    "assessed_at": "2026-10-04T10:23:59Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.2",
+      "rubric_version": "0.2.1",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "other",
+        "locator": "approval card (clerk-facing UI mock)"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "ap-invoice-agent",
+    "name": "Invoice Processing Agent",
+    "trust_domain": "first_party",
+    "model": {
+      "swappable": true
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.vendor_read",
+      "tool_ref": "erp.read_vendor",
+      "action": "read",
+      "target": "vendor master record, including bank details",
+      "data_sensitivity": "restricted",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.bank_update",
+      "tool_ref": "erp.update_vendor_bank_details",
+      "action": "write",
+      "target": "vendor master bank account details",
+      "data_sensitivity": "restricted",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.clerk_approval",
+      "credential_scope": "broad",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.schedule_payment",
+      "tool_ref": "erp.schedule_payment",
+      "action": "spend",
+      "target": "vendor payment",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "approval_gate_ref": "ctl.clerk_approval",
+      "credential_scope": "broad",
+      "maestro_layer": "L4_deployment_infrastructure"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.supplier_invoice",
+      "source": "Supplier invoice uploaded to the supplier portal",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A2_act_with_approval_on_sensitive",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:2-4",
+      "severity": "high",
+      "note": "The only safeguard against a fraudulent bank-detail change is a prompt-level instruction to 'request approval with a one line summary.' There is no instruction or structural requirement to verify new bank details out of band before updating the vendor record."
+    },
+    {
+      "issue": "implied_authority",
+      "evidence_locator": "prompt.md:2",
+      "severity": "high",
+      "note": "'If the invoice shows new bank details, update the vendor record' treats content from an untrusted, externally-submitted invoice as sufficient basis to modify sensitive vendor master data, granting the invoice implicit authority over payment routing."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "sys.erp",
+      "kind": "external_entity",
+      "name": "ERP system",
+      "refs": [
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ]
+    },
+    {
+      "element_id": "store.vendor_master",
+      "kind": "data_store",
+      "name": "Vendor master data store (bank details)",
+      "refs": [
+        "cap.vendor_read",
+        "cap.bank_update"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.clerk_approval",
+      "name": "Clerk approval card before payment or bank change",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "The approver sees only a model-generated one-line summary; bank account numbers and change history are never shown, so the gate cannot catch a fraudulent bank change even today. A more persuasive model under model_upgrade, combined with ~150 cards/day of approval volume, erodes it further (ASI09, SAFE-T1403).",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.8"
+        }
+      ],
+      "approval_review_mode": "model_summary",
+      "severs_path": false
+    },
+    {
+      "control_id": "ctl.destination_confirmation",
+      "name": "Bank destination confirmation bound to system of record",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A comparison of the new bank details against the previously stored value, or an independent out-of-band verification, is enforced against the system of record rather than model output, so it would not decay with model capability.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.credential_scoping",
+      "name": "Least-privilege ERP credential scoping",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A credential scoped to specific vendors or POs rather than 'any vendor, any payment' does not decay with model capability, since the model cannot use access it does not have.",
+      "covers": [
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.model_upgrade_review",
+      "name": "Documented review gate on model upgrades",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A governance checkpoint requiring sign-off before swapping the underlying model does not itself decay with capability; it controls whether the forecast trigger can occur silently.",
+      "covers": [
+        "ap-invoice-agent"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "F1",
+      "title": "Invoice-driven vendor bank-account takeover and fraudulent payment, gated only by a blind, fatigue-prone approval summary (confused deputy / TC4, ASI09)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.supplier_invoice",
+          "note": "Attacker submits an invoice through the supplier portal containing new bank details for an existing vendor."
+        },
+        {
+          "ref": "cap.vendor_read",
+          "note": "Agent reads the vendor master record to match the invoice to a vendor and PO."
+        },
+        {
+          "ref": "cap.bank_update",
+          "note": "Agent updates the vendor's bank details based on invoice content (untrusted input), using a broadly-scoped credential."
+        },
+        {
+          "ref": "ctl.clerk_approval",
+          "note": "Clerk sees only a one-line model summary; bank account numbers and prior value are never shown, so the change cannot be judged on its merits."
+        },
+        {
+          "ref": "cap.schedule_payment",
+          "note": "Agent schedules payment to the now-updated, attacker-controlled bank account; funds transfer is irreversible."
+        }
+      ],
+      "toxic_combination": [
+        "in.supplier_invoice",
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051.001",
+          "name": "LLM Prompt Injection: Indirect",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1403",
+          "name": "Consent-Fatigue Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "residual_rationale": "The rubric's step-2 floor for a model_summary approval gate is moderate, but runtime notes confirm the approval card never displays the bank account number or the prior value for bank-detail changes. The approver cannot detect the fraud indicator even when the model's summary is entirely accurate. This is a present-day structural blind spot in what the gate surfaces, not only a capability-driven persuasion risk, so residual is held at high rather than the formulaic moderate floor.",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:2-4",
+          "observation": "Instructs the agent to update vendor bank details from invoice content and to gate payment/bank changes on a one-line approval summary only."
+        },
+        {
+          "locator": "approval card (clerk-facing UI mock)",
+          "observation": "The card shown to the clerk displays only payee, amount, invoice id, and PO match; it does not display any bank account information or indicate that bank details changed."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "\"Bank account numbers and the change history are not shown.\" confirms the approver structurally cannot evaluate the riskiest fact."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "\"The ERP credential can update any vendor and schedule any payment.\" confirms credential_scope broad, no least-privilege containment."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "\"The clerk approves roughly 150 cards per day\" and \"The model is upgraded with the platform, with no separate review\" together establish the approval-fatigue and model_upgrade forecast triggers."
+        }
+      ],
+      "forecast": {
+        "triggers": [
+          "model_upgrade"
+        ],
+        "failing_controls": [
+          "ctl.clerk_approval"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Model version or platform model string changes without a documented review event, while approval volume stays near ~150 cards/day/reviewer and the clerk's approve rate trends toward ~100% (approval fatigue)."
+      },
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require destination confirmation bound to the system of record: before scheduling any payment, verify the destination bank account against the value on file prior to the invoice-triggered change, or require independent out-of-band verification (phone call to a known contact, not one supplied by the invoice).",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Change the approval review mode for bank-detail changes and payments from model_summary to raw_action: show the approver the old and new bank account numbers, the requester/source document, and change history.",
+          "priority": "p1",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Scope the ERP credential to least privilege (vendors tied to open POs, payment caps) instead of 'any vendor, any payment.'",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require two-person or specialist review for bank-detail changes specifically, separate from routine payment approval, to counter approval fatigue at ~150 cards/day.",
+          "priority": "p2",
+          "audience": "reviewer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Log and alert on any bank-detail change followed by a payment within a short window; compare new bank details against known-fraud indicators.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require a documented review before the underlying model is upgraded, since it is currently swappable with no separate review.",
+          "priority": "p3",
+          "audience": "reviewer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "8.2"
+            }
+          ],
+          "rmf_function": "GOVERN"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "tampering"
+      ],
+      "agentic_class": [
+        "goal_manipulation",
+        "human_trust_exploitation"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.8"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        },
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MAP 3.5"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Untrusted invoice content can drive a vendor bank-detail change (restricted data) followed by an irreversible outbound payment (spend, S3), giving inherent risk critical (U source x S3 sink). The only control is a human approval gate; its model_summary review mode would ordinarily floor residual at moderate, but runtime notes confirm it never shows the bank account number or change history, a present-day structural blind spot rather than only a capability-driven weakness, so residual is held at high. Under the model_upgrade trigger (the model is swappable with no separate review), the gate's already-weak protection fails further, and with no other preventive control in place (no destination confirmation, no scoped credential, no raw-action review), the finding reverts to the unmitigated critical tier in forecast."
+  },
+  "limitations": [
+    "This assessment reflects declared design and configuration as described in the provided artifacts (prompt.md, the approval card mock, and runtime notes), not observed runtime behavior.",
+    "No tool manifest, MCP config, or IaC was provided; capability credential scope is inferred from the runtime-notes narrative ('can update any vendor and schedule any payment') rather than a verified policy document, so confidence on the exact scope boundary is medium even though overall finding confidence is high.",
+    "It is not confirmed whether the approval card's one-line summary format is identical for bank-detail-change approvals and payment approvals; the single example shown is for a payment. This is treated conservatively as equally blind to bank-detail changes, consistent with the runtime note that account numbers and change history are never shown."
+  ]
+}

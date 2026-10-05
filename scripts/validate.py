@@ -232,8 +232,13 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
         if RANK[f["residual_risk"]] > RANK[f["inherent_risk"]]:
             errors.append(f"{fid}: residual_risk {f['residual_risk']} exceeds inherent_risk {f['inherent_risk']}")
         fc = f.get("forecast")
-        if f["horizon"] == "forecast" and not fc:
-            errors.append(f"{fid}: horizon is forecast but no forecast block")
+        if not fc:
+            # Forecasting is PARA's core claim, so every finding carries one (rubric section 6). In the
+            # v0.3.2 batch, findings without a forecast fell to 45 percent and nothing caught it.
+            errors.append(
+                f"{fid}: no forecast block; every finding needs one (rubric section 6). If no trigger "
+                "changes the tier, list the triggers considered and set projected_risk equal to residual_risk"
+            )
         if fc:
             if RANK[fc["projected_risk"]] < RANK[f["residual_risk"]]:
                 errors.append(f"{fid}: projected_risk {fc['projected_risk']} below residual_risk {f['residual_risk']}")

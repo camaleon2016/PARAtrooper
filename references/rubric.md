@@ -1,6 +1,6 @@
 # PARA Rubric
 
-Rubric version: 0.2.1. Applies to schema 0.5.x.
+Rubric version: 0.2.2. Applies to schema 0.5.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -116,6 +116,8 @@ To compute it:
    - Any control fails under `control_removal` if its owner can disable it without review.
 3. For additive triggers (`new_tool`, `new_mcp_server`, `new_peer_agent`, `data_scope_expansion`), also re-evaluate the sink class. Assume the addition is at the most common sensitivity for that deployment unless the design constrains it.
 4. Recompute residual with the remaining controls. That result is `projected_risk`.
+
+**Every finding has a `forecast` block,** present findings included. A forecast is PARA's core claim, so it is never optional. If no trigger would change a finding's tier, still record the triggers you considered, leave `failing_controls` empty, and set `projected_risk` equal to `residual_risk`. That is a real result: it says the design holds against those changes. The validator rejects any finding without a forecast.
 
 Invariants:
 - `projected_risk` ≥ `residual_risk`.
