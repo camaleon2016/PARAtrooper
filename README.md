@@ -72,6 +72,7 @@ The latest batch is in [evals/RESULTS.md](evals/RESULTS.md). Each released batch
 
 - [v0.3.0 baseline](evals/archive/0.3.0/), including the two public incident backtests, with [notes](evals/archive/0.3.0/RESULTS_NOTES.md)
 - [v0.3.1](evals/archive/0.3.1/), with [notes](evals/archive/0.3.1/RESULTS_NOTES.md) and the residual agreement diagnosis
+- [v0.3.2](evals/archive/0.3.2/), measured but not released, with [notes](evals/archive/0.3.2/RESULTS_NOTES.md) on the forecast regression it revealed
 
 ## Status
 

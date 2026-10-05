@@ -1,6 +1,19 @@
 # Changelog
 
-## 0.3.2 (unreleased)
+## 0.3.3 (unreleased)
+
+Schema 0.5.0. Rubric 0.2.2. Includes every 0.3.2 change.
+
+### Fixed
+- Forecasts are required. Rubric section 6 and the validator now require a `forecast` block on every finding, present findings included. A forecast that changes nothing records the triggers considered with `projected_risk` equal to `residual_risk`. Without this rule, findings with a forecast dropped from 76 to 55 percent in the 0.3.2 batch, and the report did not show it.
+- SKILL.md: the example of omitting empty fields used `forecast`, which caused that drop. It now uses `residual_rationale` and says never to omit `forecast`.
+
+### Changed
+- `design/0.4.0-stride-coverage.md`: adds a containment credit rule (section 14.4) and the 0.3.2 batch evidence for the approval volume factor (section 14.5). Baseline for v0.4.0 is now the 0.3.3 batch.
+
+## 0.3.2 (not released)
+
+Measured but not released: its batch showed findings with a forecast fell from 76 to 55 percent. See `evals/archive/0.3.2/RESULTS_NOTES.md`. Its changes ship in 0.3.3.
 
 Schema 0.5.0. Rubric 0.2.1. Fixes found by the v0.3.1 batch and its residual diagnosis (see `evals/archive/0.3.1/RESULTS_NOTES.md`).
 
@@ -21,7 +34,7 @@ Schema 0.5.0. Rubric 0.2.1. Fixes found by the v0.3.1 batch and its residual dia
 - Report: a main path residual agreement column, measured on the finding that contains each case's required attack path. The rollup takes the worst finding, so secondary findings can move it even when the main path is stable.
 - `evals/compare_residuals.py`: shows which controls each run credited on the main path, and the rubric floor they allow.
 
-## 0.3.1 (2026-10-02)
+## 0.3.1 (2026-10-03)
 
 Schema 0.4.0. Rubric unchanged at 0.2.0. Fixes the schema and validator gaps found by the v0.3.0 baseline (see `evals/RESULTS_NOTES.md`).
 

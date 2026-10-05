@@ -81,7 +81,7 @@ def test_forecast_horizon_requires_forecast_block():
     del f["forecast"]
     doc["findings"].append(f)
     errors, _ = run(doc)
-    assert has(errors, "horizon is forecast but no forecast block")
+    assert has(errors, "f.future: no forecast block")
 
 
 def test_rollup_mismatch():
@@ -530,3 +530,21 @@ def test_main_path_residual_is_isolated_from_rollup():
     assert result["main_path_residual"] == "high"
     stats = run_consistency.case_stats([result, run_consistency.score_run(example(), exp, SCHEMA)])
     assert stats["residual"]["agreement"] == 0.5 and stats["main_path_residual"] == 1.0
+
+
+def test_every_finding_requires_a_forecast():
+    doc = example()
+    del doc["findings"][0]["forecast"]
+    errors, _ = run(doc)
+    assert has(errors, "no forecast block; every finding needs one")
+
+
+def test_unchanged_forecast_is_valid():
+    # A forecast that projects no change is a real result and passes.
+    doc = example()
+    f = doc["findings"][0]
+    f["forecast"] = {"triggers": ["model_upgrade"], "failing_controls": [], "projected_risk": f["residual_risk"],
+                     "watch_signal": "Model version change"}
+    doc["rating"]["forecast"] = f["residual_risk"]
+    errors, _ = run(doc)
+    assert not has(errors, "forecast")

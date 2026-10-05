@@ -1,0 +1,476 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "01_support_triage-run004",
+    "assessed_at": "2026-10-04T08:26:11Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.2",
+      "rubric_version": "0.2.1",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "mcp_config",
+        "locator": "mcp.json"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "support-triage",
+    "name": "Acme Support Triage Agent",
+    "trust_domain": "first_party",
+    "model": {
+      "swappable": true
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.crm_read",
+      "tool_ref": "crm_mcp.get_customer",
+      "action": "read",
+      "target": "any customer account record, by email or account id",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.email_send",
+      "tool_ref": "mail_mcp.send",
+      "action": "send_external",
+      "target": "any external email address",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.inbound_email",
+      "source": "Customer email body (new support ticket)",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.crm_read",
+        "cap.email_send"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:2-3",
+      "severity": "high",
+      "note": "The agent may look up any customer by email or account id with no requirement to verify that the looked-up account belongs to the person emailing."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:5-6",
+      "severity": "moderate",
+      "note": "Escalation to a human before an irreversible send is conditioned entirely on the model's own judgment of whether the customer is angry; there is no structural approval gate."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:14",
+      "severity": "high",
+      "note": "The sole safeguard against disclosing one customer's data to another is a natural-language prompt rule, despite the agent holding broad read and send credentials capable of exactly that disclosure."
+    }
+  ],
+  "protocols": [
+    {
+      "protocol": "mcp",
+      "peer_ref": "svc.crm_mcp",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "internal",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    },
+    {
+      "protocol": "mcp",
+      "peer_ref": "svc.mail_mcp",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "internal",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "svc.crm_mcp",
+      "kind": "process",
+      "name": "crm_mcp server",
+      "refs": [
+        "cap.crm_read"
+      ]
+    },
+    {
+      "element_id": "svc.mail_mcp",
+      "kind": "process",
+      "name": "mail_mcp server",
+      "refs": [
+        "cap.email_send"
+      ]
+    },
+    {
+      "element_id": "store.siem_log",
+      "kind": "data_store",
+      "name": "Outbound email SIEM log",
+      "refs": [
+        "cap.email_send"
+      ],
+      "is_audit_record": true
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.prompt_no_cross_customer_share",
+      "name": "Prompt instruction: never share another customer's information",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Enforced only via natural-language instruction in the system prompt. A goal-hijacked or more capable model can rationalize exceptions ('the customer is clearly asking about their own linked account') or be split into steps that individually look permitted. Fails under model_upgrade and longer_task_horizon.",
+      "covers": [
+        "cap.crm_read",
+        "cap.email_send"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctrl.escalate_if_angry",
+      "name": "Conditional human escalation when customer appears angry",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "The decision to pause for a human is made by the same model under attack, based on its own sentiment read. It is not a structural approval gate, is not wired to any capability via approval_gate_ref, and provides no protection against an attacker who avoids angry-sounding language.",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctrl.siem_logging",
+      "name": "Outbound email logging to SIEM",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Logging happens outside the model and does not depend on model behavior, but it is purely detective: it does not block an exfiltrating send and only helps if a human reviews the log before or shortly after harm.",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "declared",
+      "maestro_layer": "L5_evaluation_observability"
+    },
+    {
+      "control_id": "ctrl.missing_scoped_crm_credential",
+      "name": "Per-request CRM credential scoped to the verified requester's own record",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. CRM_SVC_TOKEN currently grants read access to every customer record regardless of who is emailing. Binding the read to the verified identity of the requester would sever the cross-customer read path under any model behavior.",
+      "covers": [
+        "cap.crm_read"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctrl.missing_recipient_binding",
+      "name": "Outbound recipient bound to the ticket's original sender address",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. send() currently accepts any address the model supplies. Binding the destination to the verified sender address recorded in the ticketing system of record, rather than a model-chosen address, would sever redirection and cross-customer exfiltration.",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctrl.missing_approval_gate",
+      "name": "Raw-action human approval before sending confidential CRM data",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. A raw-action approval gate (approver sees the actual recipient and payload) on any send carrying confidential CRM data would floor residual risk at moderate per the rubric, independent of model capability.",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f.cross_customer_exfil",
+      "title": "Lethal trifecta (TC1) and confused deputy (TC4): an untrusted emailer can trigger lookup and send of any customer's confidential data",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.inbound_email",
+          "note": "Attacker-controlled email asks the agent to look up a different customer's account by id or email, or to also send the reply to an attacker-controlled address"
+        },
+        {
+          "ref": "cap.crm_read",
+          "note": "CRM_SVC_TOKEN can read any customer's confidential record, with no binding to the requester's identity"
+        },
+        {
+          "ref": "cap.email_send",
+          "note": "MAIL_SVC_TOKEN can send to any address; the destination is not bound to the verified original ticket sender"
+        }
+      ],
+      "toxic_combination": [
+        "in.inbound_email",
+        "cap.crm_read",
+        "cap.email_send"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1104",
+          "name": "Over-Privileged Tool Abuse",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "model_upgrade"
+        ],
+        "failing_controls": [
+          "ctrl.prompt_no_cross_customer_share",
+          "ctrl.escalate_if_angry"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "subject.model version string changes under platform upgrade with no separate review entry; subject.model.swappable remains true."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "agent may look up any customer by email or account id, with no binding to the identity of the person emailing"
+        },
+        {
+          "locator": "prompt.md:14",
+          "observation": "the only stated control against cross-customer disclosure is a single prompt instruction"
+        },
+        {
+          "locator": "mcp.json",
+          "observation": "both crm_mcp and mail_mcp are reached with static bearer tokens, no per-request scoping shown"
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "CRM_SVC_TOKEN can read every customer record; MAIL_SVC_TOKEN is a shared service account that can send to any address"
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Scope the CRM credential, or add an identity-verification step, so the agent can only read the record matching the verified requester.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bind the outbound send recipient to the original ticket's verified sender address from the system of record; reject or hold for approval any other recipient.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a raw-action human approval gate before any send carrying confidential CRM data, wired via approval_gate_ref on cap.email_send.",
+          "priority": "p2",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "information_disclosure",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L6_security_compliance"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f.unpinned_mcp_servers",
+      "title": "ASI04 supply chain: crm_mcp and mail_mcp tool definitions are unpinned and peer identity is unverified",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "svc.crm_mcp",
+          "note": "No peer identity verification or definition pinning; the server or its tool schema could be impersonated or altered after initial approval (rug pull)"
+        },
+        {
+          "ref": "cap.crm_read",
+          "note": "An altered or impersonated server could return manipulated data or expose additional hidden parameters"
+        },
+        {
+          "ref": "cap.email_send",
+          "note": "svc.mail_mcp has the same gap, so manipulated data or an added exfiltration channel can still reach egress"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1004",
+          "name": "Server Impersonation / Name-Collision",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "mcp.json",
+          "observation": "Server entries give only a URL and a bearer token header; no field or note indicates tool definitions are pinned/hashed or that peer identity is cryptographically verified"
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "No mention of pinning, signing, or server identity verification for either MCP server"
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pin or hash tool definitions for crm_mcp and mail_mcp and fail closed on any schema or description change; verify server identity (mTLS or signed identity) rather than a bare bearer token.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "tampering"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L6_security_compliance",
+        "L7_agent_ecosystem"
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Inherent risk is critical: an untrusted email can drive a broadly-scoped CRM read of any customer's confidential record followed by an irreversible, unrestricted send (lethal trifecta / confused deputy), and the agent's lack of step or runtime limits qualifies for the autonomy modifier. The only controls in place are two behavioral, model-dependent instructions (the no-cross-customer-sharing rule and the angry-customer escalation heuristic) plus detective SIEM logging; per rubric section 5 step 4 these are capped at a single tier of credit, giving a residual of high. No structural control severs or even narrows the path today: credentials are broad/shared, and there is no recipient binding or raw-action approval gate. Because the model is swappable with no separate review, a model_upgrade event is expected to defeat both behavioral controls, returning the finding to critical for the forecast. A secondary, lower-confidence finding on unpinned/unverified MCP server definitions (ASI04) shares the same sinks and does not currently change the rollup, but widens the attack surface."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in prompt.md, mcp.json, and the runtime notes, not observed runtime behavior; no transcripts, logs, or live tool-call traces were reviewed.",
+    "Tool definition pinning and peer identity verification status for crm_mcp and mail_mcp are not explicitly stated in mcp.json; their absence was treated as not implemented, which lowers confidence on the supply-chain finding to medium.",
+    "No explicit runtime step or time limits were provided beyond the artifacts shown, so max_unattended_steps and max_runtime_minutes are treated as null/unbounded per the rubric's autonomy modifier rule.",
+    "The 'escalate if angry' behavior is only described in the prompt; whether any code-level sentiment check or logging exists outside the model was not shown and so is not credited beyond a behavioral control."
+  ]
+}

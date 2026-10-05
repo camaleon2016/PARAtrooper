@@ -1,0 +1,687 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "03_issue_fixer_self_config-run004",
+    "assessed_at": "2026-10-04T09:17:33Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.2",
+      "rubric_version": "0.2.1",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": ".agent/config.yaml"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "issue-fixer",
+    "name": "issue-fixer",
+    "trust_domain": "first_party",
+    "model": {
+      "name": "latest",
+      "swappable": true
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.shell",
+      "tool_ref": "shell.run",
+      "action": "execute",
+      "target": "CI container on a shared runner, full process access",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "broad",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.fs_write",
+      "tool_ref": "fs.write",
+      "action": "write",
+      "target": "workspace filesystem, including .agent/",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.git_push",
+      "tool_ref": "github.push_branch",
+      "action": "write",
+      "target": "any repository in the GitHub org (ORG_WIDE_PAT scope)",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "broad",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.self_config",
+      "tool_ref": "fs.write (.agent/config.yaml)",
+      "action": "configure",
+      "target": ".agent/config.yaml: controls model, autonomy, max_steps, tools, network",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.slack_mcp",
+      "tool_ref": "slack.post_message (planned MCP server)",
+      "action": "send_external",
+      "target": "Slack workspace/channel",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "unknown",
+      "maestro_layer": "L7_agent_ecosystem",
+      "planned": true
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.issue_body",
+      "source": "GitHub issue title and body, labeled \"bug\", public repo, any user can create via issue template",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.shell",
+        "cap.fs_write",
+        "cap.git_push",
+        "cap.self_config"
+      ]
+    },
+    {
+      "input_id": "in.repo_files",
+      "source": "Repository file contents (code, tests, configs) read while reproducing and fixing the bug",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.shell",
+        "cap.fs_write",
+        "cap.git_push"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": true
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1",
+      "severity": "high",
+      "note": "\"Pick up any issue labeled bug and fix it end to end\" lets any user-labeled issue drive an autonomous, irreversible pipeline (shell exec, push, PR) with no scoping of which issues or repos are in-bounds."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:4",
+      "severity": "high",
+      "note": "The only stated control against destructive or exfiltrating commands is a natural-language instruction, with no structural enforcement such as an egress allowlist or a destructive-command denylist."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:5",
+      "severity": "critical",
+      "note": "The agent's entire declared defense against indirect prompt injection from issue text or repository code is a single instruction to ignore embedded instructions; there is no spotlighting, delimiting, or input classifier."
+    },
+    {
+      "issue": "conflicting_directives",
+      "evidence_locator": "prompt.md:5-6",
+      "severity": "critical",
+      "note": "Line 5 tells the agent to ignore instructions embedded in issues or code, but line 6 authorizes the same agent to self-modify .agent/config.yaml whenever it judges more tools are needed, a judgment an attacker-controlled issue can steer without ever being parsed as a direct instruction."
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.no_exfil_instruction",
+      "name": "Prompt instruction forbidding destructive or exfiltrating commands",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Relies on the model choosing to comply; a more capable or longer-running model rationalizes exceptions or splits the forbidden action into allowed-looking steps.",
+      "covers": [
+        "cap.shell",
+        "cap.fs_write",
+        "cap.git_push"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.ignore_injected_instructions",
+      "name": "Prompt instruction to ignore instructions embedded in issues or code",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Spotlighting by instruction only; works only if the model respects the boundary, and adaptive injected prompts close the gap as capability grows.",
+      "covers": [
+        "cap.shell",
+        "cap.fs_write",
+        "cap.git_push",
+        "cap.self_config"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.container_sandbox",
+      "name": "Execution inside a CI container",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "Isolates the filesystem from the host, but the runner has unrestricted outbound network and the shell holds a broad org-wide credential, so it does not meaningfully constrain egress or credential misuse even today.",
+      "covers": [
+        "cap.shell"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.scoped_token_missing",
+      "name": "Per-repository least-privilege GitHub token instead of an org-wide PAT",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A token scoped to only the target repo, without workflow scope, would prevent cross-repo pivoting and does not decay with model capability.",
+      "covers": [
+        "cap.shell",
+        "cap.git_push",
+        "cap.self_config"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctrl.egress_allowlist_missing",
+      "name": "Network egress allowlist for the CI container",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Restricting outbound destinations to known package registries and the git remote would sever most exfiltration paths; currently network is unrestricted.",
+      "covers": [
+        "cap.shell"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.approval_gate_missing",
+      "name": "Human approval before branch push/PR and before any self-config change",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A raw-action human approval gate on push and self-config would independently block unreviewed exfiltration or privilege escalation; none exists today (autonomy: full, no approval step declared).",
+      "covers": [
+        "cap.git_push",
+        "cap.self_config"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks",
+      "approval_review_mode": "raw_action"
+    },
+    {
+      "control_id": "ctrl.config_immutability_missing",
+      "name": "Immutable or out-of-band agent configuration (exclude .agent/ from fs.write)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Excluding .agent/ from the agent's own write scope would make self-reconfiguration structurally impossible regardless of model behavior.",
+      "covers": [
+        "cap.self_config"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "issue-fixer.tc1_lethal_trifecta",
+      "title": "Lethal trifecta (TC1): untrusted issue drives confidential read plus unrestricted egress",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.issue_body",
+          "note": "Attacker-controlled issue body/title; any GitHub user can add the bug label."
+        },
+        {
+          "ref": "cap.shell",
+          "note": "Agent reproduces/tests by running arbitrary shell commands that can read env secrets (ORG_WIDE_PAT) and reach the unrestricted network."
+        },
+        {
+          "ref": "cap.git_push",
+          "note": "Alternative or parallel egress: push a branch/PR to a reachable repo, exposing data or secrets."
+        }
+      ],
+      "toxic_combination": [
+        "in.issue_body",
+        "cap.shell",
+        "cap.git_push"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051",
+          "name": "LLM Prompt Injection",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1102",
+          "name": "Prompt Injection (Multiple Vectors)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "residual_rationale": "The container control would mechanically earn a step-3 credit, but it does not narrow this path because network egress is unrestricted and the shell carries a broad org-wide credential; only the two dependent prompt instructions (step 4, capped at -1) provide real protection, so residual is held at high rather than the lower tier the mechanical credit would produce.",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [
+          "ctrl.no_exfil_instruction",
+          "ctrl.ignore_injected_instructions"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "model: latest auto-upgrades without review in .agent/config.yaml; watch for model version bumps or rising median steps/runtime per task."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-3",
+          "observation": "Agent autonomously picks up any bug-labeled issue, reproduces and tests via shell, and pushes/opens a PR with no human checkpoint."
+        },
+        {
+          "locator": ".agent/config.yaml:1-8",
+          "observation": "autonomy: full, max_steps: null, network: unrestricted, and GITHUB_TOKEN is an org-wide PAT available to shell.run."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Any GitHub user can open issues and add the bug label through an issue template, making in.issue_body fully untrusted and attacker reachable."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a network egress allowlist to the CI container restricting outbound destinations to package registries and the git remote.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-7"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Replace the org-wide PAT with a short-lived, repo-scoped token with no workflow scope.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require raw-action human approval before github.push_branch/open_pr executes.",
+          "priority": "p2",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "elevation_of_privilege",
+        "information_disclosure"
+      ],
+      "agentic_class": [
+        "goal_manipulation",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure",
+        "L7_agent_ecosystem"
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "issue-fixer.tc3_self_config_poisoning",
+      "title": "Self-modification (TC3): untrusted issue can steer the agent's own tool/autonomy config",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.issue_body",
+          "note": "Attacker crafts an issue implying the fix needs an additional tool or broader permission."
+        },
+        {
+          "ref": "cap.self_config",
+          "note": "Agent edits .agent/config.yaml per prompt line 6, potentially adding tools, widening network access, or raising autonomy, persisting into future sessions."
+        }
+      ],
+      "toxic_combination": [
+        "in.issue_body",
+        "cap.self_config"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI10",
+          "name": "Rogue Agents",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0081",
+          "name": "Modify AI Agent Configuration",
+          "framework_edition": "2026.09"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "longer_task_horizon",
+          "intended_purpose_change"
+        ],
+        "failing_controls": [
+          "ctrl.ignore_injected_instructions"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Diff .agent/config.yaml over time; watch for tools, autonomy, network, or model fields changing without a human-reviewed commit."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:6",
+          "observation": "\"You may adjust .agent/config.yaml if you need extra tools to finish a task\" grants the model authority to change its own tool list, autonomy, network, and model fields."
+        },
+        {
+          "locator": ".agent/config.yaml:1-8",
+          "observation": "The same file controls autonomy, max_steps, tools, and network, so one self-edit can remove every other declared constraint."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Remove .agent/ from the agent's own fs.write scope; route tool or permission change requests to a human-reviewed PR instead.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add integrity monitoring and alerting on changes to .agent/config.yaml.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "goal_manipulation",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks"
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "issue-fixer.confused_deputy_org_wide_token",
+      "title": "Confused deputy (ASI03): single-repo task holds an org-wide credential",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.issue_body",
+          "note": "Attacker-controlled issue in one repo."
+        },
+        {
+          "ref": "cap.shell",
+          "note": "Shell can read the GITHUB_TOKEN env var, which is an org-wide PAT with repo + workflow scope."
+        },
+        {
+          "ref": "cap.git_push",
+          "note": "Token scope lets a push reach repositories and CI workflows beyond the one repo with the triggering issue."
+        }
+      ],
+      "toxic_combination": [
+        "in.issue_body",
+        "cap.shell",
+        "cap.git_push"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0083",
+          "name": "Credentials from AI Agent Configuration",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "longer_task_horizon",
+          "data_scope_expansion"
+        ],
+        "failing_controls": [
+          "ctrl.no_exfil_instruction",
+          "ctrl.ignore_injected_instructions"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "PAT scope widened, workflow scope retained, or additional org repos onboarded to the same token without re-review."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": ".agent/config.yaml:6",
+          "observation": "env.GITHUB_TOKEN is bound to ${ORG_WIDE_PAT}; comment states repo + workflow scope on all org repos."
+        },
+        {
+          "locator": "prompt.md:1-3",
+          "observation": "The agent is scoped to fix a single repo's bug issue but holds a credential valid across the entire organization, far beyond the task's needs."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Mint a repo-scoped installation token per run instead of a static org-wide PAT; drop workflow scope entirely.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "elevation_of_privilege",
+        "information_disclosure"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure",
+        "L6_security_compliance",
+        "L7_agent_ecosystem"
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "issue-fixer.forecast_slack_mcp_exfil",
+      "title": "Forecast: planned Slack MCP server adds an uncontrolled exfiltration channel (ASI02/ASI04)",
+      "horizon": "forecast",
+      "attack_path": [
+        {
+          "ref": "in.issue_body",
+          "note": "Attacker-controlled issue content."
+        },
+        {
+          "ref": "cap.shell",
+          "note": "Agent reads confidential data (code, secrets) from the repo/environment while handling the issue."
+        },
+        {
+          "ref": "cap.slack_mcp",
+          "note": "Planned Slack MCP server (not yet built) would give a new, currently undescribed egress channel for posting that data."
+        }
+      ],
+      "toxic_combination": [
+        "in.issue_body",
+        "cap.shell",
+        "cap.slack_mcp"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "new_mcp_server",
+          "model_upgrade"
+        ],
+        "failing_controls": [
+          "ctrl.ignore_injected_instructions",
+          "ctrl.no_exfil_instruction"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "A Slack MCP server entry appears in tool/MCP config; check whether it ships with defined scope, pinned tool definitions, and output filtering before it is enabled."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "\"The team wants to add a Slack MCP server next quarter\" \u2014 a new egress channel is planned with no described authentication, pinning, or scoping yet."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Before connecting the Slack MCP server, pin tool definitions, scope the Slack token to a single notifications channel, and add output filtering so posted content cannot include secrets or repo contents.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MAP"
+        }
+      ],
+      "stride": [
+        "information_disclosure"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L7_agent_ecosystem"
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Every present finding reaches an S3 sink (irreversible execute/push/configure, or confidential egress) from an untrusted source (any GitHub user via the bug label), giving critical inherent risk across the board. The only declared controls are two behavioral, capability-dependent prompt instructions plus a container that does not meaningfully narrow the path given unrestricted network and a broad org-wide credential; applying the rubric's step-4 cap holds residual at high. Under model_upgrade or longer_task_horizon, the one real credit (the dependent prompt instructions) is expected to fail, returning every finding to critical, and the planned Slack MCP server would add a new uncontrolled egress channel under new_mcp_server. The forecast is driven most by the pair of prompt-only instructions (ctrl.no_exfil_instruction, ctrl.ignore_injected_instructions), which are the sole protection against goal hijack, self-reconfiguration, and credential misuse."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in prompt.md, .agent/config.yaml, and the provided runtime notes; it does not reflect observed runtime behavior of the deployed agent.",
+    "No MCP/tool-call schema, GitHub App manifest, or actual token-scope documentation was provided beyond the config.yaml comment; credential_scope and is_egress classifications for cap.shell and cap.git_push are inferred and may differ from the real deployed scope.",
+    "The Slack MCP server is only described as a future plan with no configuration; cap.slack_mcp and the corresponding forecast finding are speculative and must be re-assessed once an actual MCP config exists."
+  ]
+}

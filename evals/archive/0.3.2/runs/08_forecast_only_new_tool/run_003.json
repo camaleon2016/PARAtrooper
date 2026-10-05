@@ -1,0 +1,425 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "08_forecast_only_new_tool-run003",
+    "assessed_at": "2026-10-04T11:00:07Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.2",
+      "rubric_version": "0.2.1",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "docs-qa",
+    "name": "docs-qa",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.docs_search",
+      "tool_ref": "docs.search",
+      "action": "read",
+      "target": "engineering design docs index",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.chat_reply",
+      "tool_ref": "chat.reply",
+      "action": "send_external",
+      "target": "chat message to the authenticated requester",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.web_fetch",
+      "tool_ref": "web.fetch",
+      "action": "send_external",
+      "target": "arbitrary external URL, not restricted to a vetted allowlist",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "unknown",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "planned": true
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.employee_question",
+      "source": "SSO authenticated employee chat message",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.docs_search",
+        "cap.chat_reply"
+      ]
+    },
+    {
+      "input_id": "in.design_docs",
+      "source": "Engineering design docs, write-restricted to engineers",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.chat_reply"
+      ]
+    },
+    {
+      "input_id": "in.jira_tickets",
+      "source": "Jira tickets filed by customers, via a planned Jira MCP server",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.web_fetch",
+        "cap.chat_reply"
+      ],
+      "planned": true
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": 3,
+    "max_runtime_minutes": 2,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "runtime notes",
+      "severity": "low",
+      "note": "The design does not say who may ask questions (any SSO-authenticated employee, or engineers only) and docs.search uses a single credential shared across all askers rather than one scoped to the asker's own read permissions. If a non-engineer can ask, the agent's shared credential becomes a confused-deputy path to confidential docs. Current inherent severity for this path is low (trusted source, S2 sink, no egress), so it is recorded here rather than as a separate finding."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:2",
+      "severity": "moderate",
+      "note": "The only safeguard against leaking secrets or credentials in an answer is a prompt instruction (behavioral, dependent on model compliance). There is no structural redaction, DLP check, or output filter on cap.chat_reply, and the rule's wording does not cover general confidential design content, only 'secrets or credentials'."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "ds.design_docs_store",
+      "kind": "data_store",
+      "name": "Engineering design docs store",
+      "refs": [
+        "in.design_docs",
+        "cap.docs_search"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "ext.jira_mcp_server",
+      "kind": "external_entity",
+      "name": "Planned Jira MCP server (customer ticket feed)",
+      "refs": [
+        "in.jira_tickets"
+      ],
+      "planned": true
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.no_egress_today",
+      "name": "No network egress capability exists today",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by the simple absence of any egress-capable tool; the model cannot invoke a capability that does not exist, regardless of model behavior. This is nullified the moment an egress tool (web.fetch) is added, so it fails entirely under the new_tool trigger.",
+      "covers": [
+        "cap.docs_search",
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctrl.reply_binding",
+      "name": "Chat replies are bound to the authenticated requester; client does not render images or fetch links",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by the chat client, not the model. It closes covert exfiltration channels (rendered links, images) on the reply path today, but it does not and cannot cover a future tool like web.fetch, which operates outside the chat client's rendering.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctrl.readonly_credential",
+      "name": "Read-only credential for docs.search",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The credential cannot write or delete regardless of model behavior, which bounds damage to disclosure rather than destruction. It is shared across all askers rather than user-delegated, so it does not prevent over-broad reads, and it does not block a read-then-egress chain once an egress tool exists.",
+      "covers": [
+        "cap.docs_search"
+      ],
+      "status": "declared",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctrl.no_secrets_in_answers",
+      "name": "Prompt instruction: never paste secrets or credentials into answers",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Relies on the model choosing to comply, and only names literal secrets and credentials, not general confidential design content. A more capable or adversarially prompted model can rationalize exceptions or reframe disclosure as a citation.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L1_foundation_models"
+    },
+    {
+      "control_id": "ctrl.egress_allowlist_missing",
+      "name": "Network egress allowlist restricting web.fetch destinations",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not present. If implemented to exclude attacker-writable or arbitrary destinations, it would sever the exfiltration path regardless of model behavior.",
+      "covers": [
+        "cap.web_fetch"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctrl.injection_filter_missing",
+      "name": "Input classifier or provenance tagging on Jira ticket content",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "Not present. Would reduce, but not eliminate, the chance that injected instructions in customer-filed tickets reach tool-calling decisions.",
+      "covers": [
+        "in.jira_tickets"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctrl.approval_gate_missing",
+      "name": "Human approval gate on web.fetch calls derived from untrusted content",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not present. A raw-action review of the destination URL and arguments before fetch would not decay with model capability, unlike a summary-based gate.",
+      "covers": [
+        "cap.web_fetch"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f.forecast_web_fetch_jira_trifecta",
+      "title": "Lethal trifecta (TC1) opens once web.fetch and the Jira MCP server are added: customer-authored ticket content could direct exfiltration of confidential design docs",
+      "horizon": "forecast",
+      "attack_path": [
+        {
+          "ref": "in.jira_tickets",
+          "note": "Customer-filed Jira ticket text enters the agent's context once the planned MCP server is connected; content is untrusted (U), authored by an external party."
+        },
+        {
+          "ref": "cap.docs_search",
+          "note": "Agent reads confidential engineering design docs, as it already does for any question, using a credential shared across all askers."
+        },
+        {
+          "ref": "cap.web_fetch",
+          "note": "Planned tool provides network egress; an injected instruction in ticket content could direct the agent to fetch a URL carrying confidential doc content in the query string, or to an attacker-controlled destination."
+        }
+      ],
+      "toxic_combination": [
+        "in.jira_tickets",
+        "cap.docs_search",
+        "cap.web_fetch"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051.001",
+          "name": "LLM Prompt Injection: Indirect",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1102",
+          "name": "Prompt Injection (Multiple Vectors)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1911",
+          "name": "Parameter Exfiltration",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "low",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "'Roadmap for next sprint: add a web.fetch tool so answers can include public references, and connect a Jira MCP server that includes tickets filed by customers.' Neither exists in the current deployment."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "'There is no network egress today.' Today's residual risk is low because the sink capability (cap.web_fetch) does not exist, which structurally severs the path (ctrl.no_egress_today, severs_path: true) regardless of model behavior."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "'The design docs are confidential.' and 'The credential is read only.' establishes the data sensitivity on the read side and that the only containment once egress exists is read-only scoping, which does not prevent disclosure."
+        },
+        {
+          "locator": "prompt.md:2",
+          "observation": "'Never paste secrets or credentials into answers' is the only stated preventive control for leakage, and it is behavioral and does not mention general confidential content or tool arguments beyond chat replies."
+        }
+      ],
+      "forecast": {
+        "triggers": [
+          "new_tool",
+          "new_mcp_server"
+        ],
+        "failing_controls": [
+          "ctrl.no_egress_today"
+        ],
+        "projected_risk": "high",
+        "watch_signal": "Tool manifest or MCP client config diff showing a new web.fetch entry and a new Jira MCP server entry (tools/list changes); the roadmap item moving from planned to shipped in release notes or deployment config."
+      },
+      "likelihood": "unlikely",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      },
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Before shipping web.fetch, implement a network egress allowlist restricting fetch destinations to a small set of vetted, non-user-writable domains, and reject destinations built from tool or input content.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-7"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Treat all content retrieved from the planned Jira MCP server as untrusted (U); add input classification or provenance tagging, and require a raw-action human approval gate on any web.fetch call whose destination or arguments derive from ticket content.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Scope docs.search access to the individual asker's own document permissions instead of a single shared service credential, closing the confused-deputy gap noted in instructions review.",
+          "priority": "p2",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MAP"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Once web.fetch ships, log every destination and argument set and review logs during the rollout period.",
+          "priority": "p3",
+          "audience": "reviewer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AU-10"
+            }
+          ],
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "information_disclosure"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 3.1"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "8.2"
+        }
+      ]
+    }
+  ],
+  "rating": {
+    "inherent": "low",
+    "residual": "low",
+    "forecast": "high",
+    "rationale": "No present-horizon finding reaches moderate or above: the agent's only untrusted-adjacent paths today route through a trusted, SSO-authenticated requester, there is no egress-capable tool, and the chat client neither renders links nor images, so the one complete path that exists today (read confidential docs, reply to the same authenticated requester) scores low on the base matrix and is not filed as a separate finding. The roadmap, however, names two additions for next sprint: a web.fetch tool (new egress) and a Jira MCP server exposing customer-authored, untrusted ticket content. Together with the existing confidential docs read, these would complete a lethal trifecta (TC1) whose inherent severity is critical, reduced only to high by the read-only credential narrowing (no approval gate or egress allowlist is declared). The control whose decay drives the entire forecast is ctrl.no_egress_today: it is not a designed safeguard but an absence of capability, and it provides zero protection the moment web.fetch exists, which is exactly what the new_tool trigger represents."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in prompt.md and the runtime notes, not observed runtime behavior; no logs, traces, or live tool manifest were reviewed.",
+    "No MCP config or tool manifest was provided for docs.search or chat.reply; capability scope (action, data_sensitivity, credential_scope) is inferred from prose, so confidence on those fields is medium.",
+    "web.fetch and the Jira MCP server are roadmap items described only in prose; their exact arguments, authentication method, and credential scope are unknown and were assumed at typical defaults for this class of tool, so the forecast finding is confidence medium and should be re-run against the actual tool schema and MCP config before launch.",
+    "The credential_scope of 'shared_service_account' for docs.search is inferred from the fact that any SSO-authenticated employee appears able to trigger a search against engineering-only docs; this was not explicitly stated and should be verified against the actual access control implementation."
+  ]
+}
