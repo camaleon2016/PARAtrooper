@@ -18,6 +18,7 @@ Portability release. Rubric, schema, and scoring are unchanged (rubric 0.2.2, sc
   - Cost controls: `--estimate` (tokens and dollars before any call), `--set smoke` (one case of each kind), `--budget-usd` (a hard stop based on reported usage), and per run cost in each `run_NNN.meta.json`.
   - `--out` on the harness and `--runs-dir` on the scoring scripts, so each model's runs live in their own folder.
   - The manifest records the provider and endpoint host. It never records keys.
+  - `--max-retries` (default 8): retries with backoff on rate limits, for low quota subscriptions.
 - README: install instructions for GitHub Copilot, Azure, Gemini, ChatGPT and Codex, and Claude.
 - Tests for the provider adapter, cost math, budget guard, prompt pack, the no `jsonschema` fallback, and Agent Skills frontmatter conformance.
 
