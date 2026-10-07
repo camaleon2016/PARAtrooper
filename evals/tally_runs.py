@@ -18,7 +18,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "para" / "scripts"))
 from validate import DEFAULT_SCHEMA, check  # noqa: E402
 
 RUNS = ROOT / "evals" / "runs"
@@ -52,18 +52,19 @@ def classify(path: Path, schema: dict) -> tuple[str, list[str]]:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--all", action="store_true", help="list every failing run")
+    ap.add_argument("--runs-dir", type=Path, default=RUNS, help="folder of runs (default evals/runs)")
     args = ap.parse_args(argv)
     schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8-sig"))
 
     outcomes, kinds, by_case = Counter(), Counter(), {}
-    for path in sorted(RUNS.glob(f"*/{RUN_GLOB}")):
+    for path in sorted(args.runs_dir.glob(f"*/{RUN_GLOB}")):
         outcome, errors = classify(path, schema)
         outcomes[outcome] += 1
         by_case.setdefault(path.parent.name, Counter())[outcome] += 1
         if outcome == "validator errors":
             kinds.update({error_kind(e) for e in errors})
         if args.all and outcome != "clean":
-            print(f"{path.relative_to(ROOT).as_posix()}: {outcome}: {errors[0] if errors else ''}")
+            print(f"{path.as_posix()}: {outcome}: {errors[0] if errors else ''}")
 
     print("Outcomes:", dict(outcomes))
     for case_id, counts in by_case.items():

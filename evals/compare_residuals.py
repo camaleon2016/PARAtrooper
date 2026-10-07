@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "para" / "scripts"))
 from validate import RANK, residual_floor  # noqa: E402
 
 EVALS = ROOT / "evals"
@@ -103,11 +103,12 @@ def describe_run(path: Path, doc: dict, required_paths: list[list[str]]) -> list
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--case", action="append", help="case_id; repeatable. Default: cases 01, 03, 04, 10, 11")
+    ap.add_argument("--runs-dir", type=Path, default=EVALS / "runs", help="folder of runs (default evals/runs)")
     args = ap.parse_args(argv)
     for case_id in args.case or DEFAULT_CASES:
         exp = load(EVALS / "expected" / f"{case_id}.expected.json") or {}
         print(f"## {case_id}  expected residual {exp.get('rating', {}).get('residual')}")
-        for path in sorted((EVALS / "runs" / case_id).glob(RUN_GLOB)):
+        for path in sorted((args.runs_dir / case_id).glob(RUN_GLOB)):
             doc = load(path)
             if not isinstance(doc, dict) or "_parse_error" in doc:
                 print(f"  {path.name}: not parseable")

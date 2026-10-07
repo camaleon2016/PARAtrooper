@@ -62,6 +62,6 @@ Goal hijack, collusion, cascading failure, and human trust exploitation do not f
 
 ## Updating this file
 
-1. Regenerate `references/data/atlas_ids_<edition>.tsv` from the new ATLAS release and update the file name in `evals/check_cases.py`. CI then rejects any `AML.` id that does not exist in the pinned edition.
-2. Regenerate `references/data/safe_mcp_ids.tsv` when the SAFE-MCP catalog changes, update the pin above, and assign any new technique to one ASI row.
+1. Regenerate `evals/data/atlas_ids_<edition>.tsv` from the new ATLAS release and update the file name in `evals/check_cases.py`. CI then rejects any `AML.` id that does not exist in the pinned edition.
+2. Regenerate `evals/data/safe_mcp_ids.tsv` when the SAFE-MCP catalog changes, update the pin above, and assign any new technique to one ASI row.
 3. Bump the edition strings above and note renumbered ids in the CHANGELOG.

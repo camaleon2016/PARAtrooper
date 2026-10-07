@@ -30,7 +30,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "para" / "scripts"))
 from validate import DEFAULT_SCHEMA, RANK, check  # noqa: E402
 
 EVALS = ROOT / "evals"
@@ -173,7 +173,7 @@ def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict) -
     """Summary table suitable for publishing in the README or a release."""
     lines = ["# PARA eval results", "",
              "Validator clean means the assessment parsed, matched the schema, and passed every rubric "
-             "consistency check in scripts/validate.py with zero errors. Residual agreement is on the "
+             "consistency check in skills/para/scripts/validate.py with zero errors. Residual agreement is on the "
              "rating rollup (the worst finding); main path residual agreement is on the finding that "
              "contains the case's required attack path.", ""]
     if meta:
@@ -244,6 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--min-agreement", type=float, default=0.8)
     ap.add_argument("--json", type=Path, help="write per run scores to this file")
     ap.add_argument("--report", type=Path, help="write a Markdown summary table to this file")
+    ap.add_argument("--runs-dir", type=Path, default=EVALS / "runs", help="folder of runs (default evals/runs)")
     args = ap.parse_args(argv)
 
     schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8-sig"))
@@ -258,12 +259,12 @@ def main(argv: list[str] | None = None) -> int:
     for exp_path in expected_files:
         exp = json.loads(exp_path.read_text(encoding="utf-8-sig"))
         case_id = exp["case_id"]
-        runs_dir = EVALS / "runs" / case_id
+        runs_dir = args.runs_dir / case_id
         if args.runner:
             run_runner(args.runner, EVALS / "cases" / f"{case_id}.md", runs_dir, args.n)
         run_files = sorted(runs_dir.glob(RUN_GLOB)) if runs_dir.exists() else []
         if not run_files:
-            report.append(f"## {case_id}: no runs in {runs_dir.relative_to(ROOT)}")
+            report.append(f"## {case_id}: no runs in {runs_dir.as_posix()}")
             continue
         results = [score_file(p, exp, schema) for p in run_files]
         dump[case_id] = results
@@ -277,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         args.json.write_text(json.dumps(dump, indent=2), encoding="utf-8")
     if args.report:
-        manifest_path = EVALS / "runs" / "manifest.json"
+        manifest_path = args.runs_dir / "manifest.json"
         meta = json.loads(manifest_path.read_text(encoding="utf-8-sig")) if manifest_path.exists() else {}
         args.report.write_text(markdown_report(stats, kinds, meta), encoding="utf-8")
     return 0 if all_ok else 1

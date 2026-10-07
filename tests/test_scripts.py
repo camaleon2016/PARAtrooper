@@ -548,3 +548,130 @@ def test_unchanged_forecast_is_valid():
     doc["rating"]["forecast"] = f["residual_risk"]
     errors, _ = run(doc)
     assert not has(errors, "forecast")
+
+
+def test_validator_runs_rubric_checks_without_jsonschema(monkeypatch):
+    monkeypatch.setattr(validate, "Draft202012Validator", None)
+    errors, warnings = run(example())
+    assert not errors and has(warnings, "schema check skipped")
+    doc = example()
+    del doc["findings"][0]["forecast"]
+    errors, _ = run(doc)
+    assert has(errors, "no forecast block")
+    errors, _ = run({"schema_version": "0.5.0"})
+    assert has(errors, "structure: missing required field 'findings'")
+
+
+def test_validation_checklist_covers_every_validator_error():
+    # The plain language checklist must keep pace with the validator's error rules.
+    import re  # pylint: disable=import-outside-toplevel
+    source = (ROOT / "skills" / "para" / "scripts" / "validate.py").read_text(encoding="utf-8")
+    checklist = (ROOT / "skills" / "para" / "references" / "validation_checklist.md").read_text(encoding="utf-8")
+    error_rules = len(re.findall(r"errors\.append\(", source))
+    assert checklist.count("**Error:**") >= 15, "checklist lost error rules"
+    assert error_rules <= 30, "validator grew; review validation_checklist.md and raise this bound"
+
+
+class _Obj:  # pylint: disable=too-few-public-methods
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def test_openai_compatible_call_maps_parameters_and_usage():
+    import run_skill  # pylint: disable=import-outside-toplevel
+    sent = {}
+
+    def create(**kwargs):
+        sent.update(kwargs)
+        return _Obj(
+            choices=[_Obj(message=_Obj(content='{"a": 1}'), finish_reason="length")],
+            usage=_Obj(prompt_tokens=20000, completion_tokens=900, prompt_tokens_details=_Obj(cached_tokens=18000)),
+        )
+
+    client = _Obj(chat=_Obj(completions=_Obj(create=create)))
+    options = {"provider": "openai", "token_param": "max_completion_tokens", "reasoning_effort": "low",
+               "json_mode": True}
+    text, meta = run_skill.call_model(client, "my-deployment", "SYS", "USER", 64000, None, options)
+    assert text == '{"a": 1}'
+    assert sent["max_completion_tokens"] == 64000 and "temperature" not in sent
+    assert sent["reasoning_effort"] == "low" and sent["response_format"] == {"type": "json_object"}
+    assert sent["messages"][0] == {"role": "system", "content": "SYS"}
+    assert meta["stop_reason"] == "max_tokens" and meta["cache_read_input_tokens"] == 18000
+
+
+def test_run_cost_handles_cached_tokens_per_provider():
+    import run_skill  # pylint: disable=import-outside-toplevel
+    prices = {"in": 2.0, "cached_in": 0.5, "out": 10.0}
+    openai_meta = {"provider": "openai", "input_tokens": 20000, "cache_read_input_tokens": 18000, "output_tokens": 1000}
+    # 2,000 uncached at $2, 18,000 cached at $0.50, 1,000 out at $10, per million.
+    assert abs(run_skill.run_cost(openai_meta, prices) - (2000 * 2 + 18000 * 0.5 + 1000 * 10) / 1e6) < 1e-9
+    anthropic_meta = {"provider": "anthropic", "input_tokens": 600, "cache_read_input_tokens": 20000, "output_tokens": 1000}
+    assert abs(run_skill.run_cost(anthropic_meta, prices) - (600 * 2 + 20000 * 0.5 + 1000 * 10) / 1e6) < 1e-9
+    assert run_skill.run_cost(openai_meta, {"in": None, "out": None}) is None
+
+
+def test_smoke_set_and_estimate():
+    import run_skill  # pylint: disable=import-outside-toplevel
+    smoke = run_skill.select_cases(None, "smoke")
+    assert smoke and {c.stem for c in smoke} <= set(run_skill.SMOKE_SET)
+    lines = run_skill.estimate(smoke, "x" * 80000, 1, 20000, {"in": 1.0, "cached_in": 0.25, "out": 8.0})
+    assert "calls" in lines[0] and any("cached" in line for line in lines)
+
+
+def test_budget_guard_stops_and_manifest_records_provider(tmp_path, monkeypatch):
+    import run_skill  # pylint: disable=import-outside-toplevel
+    monkeypatch.setenv("AZURE_TEST_KEY", "secret-value")
+    monkeypatch.setattr(run_skill, "make_client", lambda args: (object(), (RuntimeError,)))
+    monkeypatch.setattr(run_skill, "call_model", lambda *a, **k: (
+        EXAMPLE.read_text(encoding="utf-8"),
+        {"input_tokens": 1_000_000, "output_tokens": 0, "stop_reason": "stop"}))
+    code = run_skill.main([
+        "--provider", "openai", "--api-key-env", "AZURE_TEST_KEY", "--model", "dep",
+        "--base-url", "https://example-resource.openai.azure.com/openai/v1/",
+        "--case", "01_support_triage", "--runs", "3", "--out", str(tmp_path),
+        "--price-in", "1", "--price-out", "1", "--budget-usd", "1",
+    ])
+    assert code == 0
+    runs = sorted((tmp_path / "01_support_triage").glob(run_consistency.RUN_GLOB))
+    assert len(runs) == 1  # $1 spent on the first call, so the guard stops before the second
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["provider"] == "openai" and manifest["endpoint"] == "example-resource.openai.azure.com"
+    assert "secret-value" not in (tmp_path / "manifest.json").read_text(encoding="utf-8")
+
+
+def test_prompt_pack_is_current_and_complete():
+    import importlib.util  # pylint: disable=import-outside-toplevel
+    spec = importlib.util.spec_from_file_location("build_prompt_pack", ROOT / "tools" / "build_prompt_pack.py")
+    pack = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pack)
+    text = pack.build()
+    assert not text.split("## SKILL.md", 1)[1].lstrip().startswith("---\nname:")
+    assert "## references/validation_checklist.md" in text and "## schema/assessment.schema.json" in text
+    assert pack.main(["--check"]) == 0
+
+
+def test_skill_frontmatter_follows_agent_skills_spec():
+    # agentskills.io: only these fields; name matches the folder; lowercase letters, digits, single hyphens.
+    import re  # pylint: disable=import-outside-toplevel
+    skill_dir = ROOT / "skills" / "para"
+    text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    front = text.split("---\n", 2)[1]
+    top_keys = re.findall(r"^([A-Za-z_-]+):", front, flags=re.MULTILINE)
+    assert set(top_keys) <= {"name", "description", "license", "compatibility", "metadata", "allowed-tools"}
+    name = re.search(r"^name: (.+)$", front, flags=re.MULTILINE).group(1).strip()
+    assert name == skill_dir.name and re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name) and len(name) <= 64
+    description = re.search(r"^description: (.+)$", front, flags=re.MULTILINE).group(1)
+    compatibility = re.search(r"^compatibility: (.+)$", front, flags=re.MULTILINE).group(1)
+    assert len(description) <= 1024 and len(compatibility) <= 500
+    assert len(text.splitlines()) < 500
+
+
+def test_clients_get_retry_setting(monkeypatch):
+    import argparse  # pylint: disable=import-outside-toplevel
+    import run_skill  # pylint: disable=import-outside-toplevel
+    monkeypatch.setenv("TEST_KEY", "k")
+    args = argparse.Namespace(provider="openai", api_key_env="TEST_KEY", base_url="https://x.example/openai/v1/",
+                              max_retries=8)
+    client, _ = run_skill.make_client(args)
+    assert client.max_retries == 8
+    assert run_skill.build_parser().parse_args([]).max_retries == 8
