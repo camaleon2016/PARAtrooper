@@ -54,7 +54,15 @@ For every repository you work in, copy it to your personal skills folder instead
 
 ### Claude
 
-Copy `skills/para` to `.claude/skills/para` in a project, or to `~/.claude/skills/para` for all projects. In the Claude apps, upload it as a custom skill.
+- **Claude Code:** install it as a plugin from this repository's marketplace:
+
+  ```
+  /plugin marketplace add camaleon2016/PARAtrooper
+  /plugin install para@paratrooper
+  ```
+
+  Or copy `skills/para` to `.claude/skills/para` in a project, or to `~/.claude/skills/para` for all projects.
+- **Claude apps:** zip the `skills/para` folder and upload it as a custom skill.
 
 ### What has been measured
 
