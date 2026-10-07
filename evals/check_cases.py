@@ -5,7 +5,7 @@ Exit code 0 = consistent, 1 = problems found.
 
 This does not run the skill. It catches drift: an expected file that names an id the case never
 defines, a trigger or tier the schema does not allow, a case with no expected file, or a MITRE ATLAS
-or SAFE-MCP id that does not exist in the pinned edition under references/data/.
+or SAFE-MCP id that does not exist in the pinned edition under evals/data/.
 """
 
 from __future__ import annotations
@@ -17,19 +17,20 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 EVALS = ROOT / "evals"
-SCHEMA = json.loads((ROOT / "schema" / "assessment.schema.json").read_text(encoding="utf-8-sig"))
+SKILL = ROOT / "skills" / "para"
+SCHEMA = json.loads((SKILL / "schema" / "assessment.schema.json").read_text(encoding="utf-8-sig"))
 TIERS = set(SCHEMA["$defs"]["tier"]["enum"])
 TRIGGERS = set(SCHEMA["$defs"]["forecast_trigger"]["enum"])
 KINDS = {"vulnerable", "clean", "edge", "forecast", "backtest", "coverage"}
 STRIDE = set(SCHEMA["$defs"]["stride"]["enum"])
 ASI_ID = re.compile(r"^ASI(0[1-9]|10)$")
 FIELDS = ("inherent", "residual", "forecast")
-DATA = ROOT / "references" / "data"
+DATA = ROOT / "evals" / "data"
 ATLAS_ID = re.compile(r"\bAML\.T\d{4}(?:\.\d{3})?\b")
 SAFE_ID = re.compile(r"\bSAFE-T\d{4}(?:\.\d{3})?\b")
 # Files whose framework ids must exist in the pinned editions. The CHANGELOG is exempt because it
 # records retired ids on purpose.
-ID_SCAN = ["references/*.md", "examples/*.json", "evals/cases/*.md", "evals/expected/*.json", "SKILL.md"]
+ID_SCAN = ["skills/para/references/*.md", "examples/*.json", "evals/cases/*.md", "evals/expected/*.json", "skills/para/SKILL.md"]
 
 
 def load_ids(name: str) -> set[str]:

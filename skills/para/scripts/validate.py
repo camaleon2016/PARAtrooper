@@ -11,7 +11,11 @@ import json
 import sys
 from pathlib import Path
 
-from jsonschema import Draft202012Validator, FormatChecker
+try:
+    from jsonschema import Draft202012Validator, FormatChecker
+except ImportError:  # Optional: many agent sandboxes lack it. Rubric checks still run without it.
+    Draft202012Validator = None
+    FormatChecker = None
 
 TIERS = ["low", "moderate", "high", "critical"]
 RANK = {t: i for i, t in enumerate(TIERS)}
@@ -132,13 +136,28 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
 
-    validator = Draft202012Validator(schema, format_checker=FormatChecker())
-    for err in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path)):
-        path = "/".join(str(p) for p in err.absolute_path) or "<root>"
-        errors.append(f"schema: {path}: {err.message}")
+    if Draft202012Validator is not None:
+        validator = Draft202012Validator(schema, format_checker=FormatChecker())
+        for err in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path)):
+            path = "/".join(str(p) for p in err.absolute_path) or "<root>"
+            errors.append(f"schema: {path}: {err.message}")
+    else:
+        warnings.append("schema check skipped: jsonschema is not installed (pip install jsonschema); rubric checks ran")
+        if not isinstance(doc, dict):
+            return ["structure: the document is not a JSON object"], warnings
+        errors += [f"structure: missing required field '{key}'" for key in schema.get("required", []) if key not in doc]
     if errors:
         return errors, warnings  # Semantic checks assume a structurally valid document.
 
+    try:
+        _semantic_checks(doc, errors, warnings)
+    except (KeyError, TypeError, AttributeError) as exc:
+        # Only reachable without jsonschema: the schema check would have caught the malformed field.
+        errors.append(f"structure: malformed or missing field ({exc!r}); install jsonschema for a precise message")
+    return errors, warnings
+
+
+def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
     caps = {c["capability_id"]: c for c in doc["capabilities"]}
     inputs = {i["input_id"]: i for i in doc["inputs"]}
     controls = {c["control_id"]: c for c in doc["controls"]}
@@ -282,8 +301,6 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
 
     if not any("runtime" in lim.lower() for lim in doc["limitations"]):
         errors.append("limitations: must state that the assessment reflects design, not observed runtime behavior")
-
-    return errors, warnings
 
 
 def main(argv: list[str] | None = None) -> int:

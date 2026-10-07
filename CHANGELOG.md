@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.4 (unreleased)
+
+Portability release. Rubric, schema, and scoring are unchanged (rubric 0.2.2, schema 0.5.0), so the v0.3.3 Claude results still describe how the skill rates risk.
+
+### Changed
+- The skill now lives in `skills/para/`, which is all an installer needs to copy. The Agent Skills standard requires a skill's `name` to match its folder, and the repository root (`PARAtrooper`) did not.
+- SKILL.md frontmatter adds `license`, `compatibility`, and `metadata` (author, version, repository), the optional fields the Agent Skills specification defines.
+- The framework id lists used by CI moved from the skill's references to `evals/data/`.
+
+### Added
+- `references/validation_checklist.md`: every validator check in plain language, for platforms that cannot run code. SKILL.md points to it instead of asking the model to read Python.
+- `validate.py` runs every rubric check even when `jsonschema` is not installed, and warns that the schema check was skipped.
+- `dist/para-prompt.md`, built by `tools/build_prompt_pack.py`: the whole skill in one file for platforms without Agent Skills support, such as Azure AI Foundry agents, ChatGPT projects, and Gemini. CI fails if it is out of date.
+- Eval harness:
+  - `--provider openai` for any OpenAI compatible Chat Completions endpoint, including Azure OpenAI and Azure AI Foundry (v1 endpoint), OpenAI, Gemini's compatibility endpoint, and local servers. Options for the output limit parameter, reasoning effort, and JSON mode.
+  - Cost controls: `--estimate` (tokens and dollars before any call), `--set smoke` (one case of each kind), `--budget-usd` (a hard stop based on reported usage), and per run cost in each `run_NNN.meta.json`.
+  - `--out` on the harness and `--runs-dir` on the scoring scripts, so each model's runs live in their own folder.
+  - The manifest records the provider and endpoint host. It never records keys.
+- README: install instructions for GitHub Copilot, Azure, Gemini, ChatGPT and Codex, and Claude.
+- Tests for the provider adapter, cost math, budget guard, prompt pack, the no `jsonschema` fallback, and Agent Skills frontmatter conformance.
+
 ## 0.3.3 (2026-10-05)
 
 Schema 0.5.0. Rubric 0.2.2. Includes every 0.3.2 change.
