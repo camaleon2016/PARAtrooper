@@ -1,0 +1,453 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "13_runaway_enrichment_cost-run004",
+    "assessed_at": "2026-10-11T05:19:08Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.4",
+      "model": "gpt-5.4",
+      "rubric_version": "0.2.2"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "on_request"
+  },
+  "subject": {
+    "agent_id": "enrichment-agent",
+    "name": "enrichment-agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.enrich_lookup",
+      "tool_ref": "enrich.lookup",
+      "action": "spend",
+      "target": "paid enrichment API",
+      "data_sensitivity": "internal",
+      "reversibility": "irreversible",
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.spawn_researcher",
+      "action": "delegate",
+      "target": "researcher sub agent",
+      "data_sensitivity": "internal",
+      "reversibility": "partially_reversible",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.crm_write",
+      "action": "write",
+      "target": "CRM enriched account fields",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.crm_rows",
+      "source": "Nightly batch of CRM account rows",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": true,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1-3",
+      "severity": "high",
+      "note": "Instruction says to keep going until every row is complete, with no stopping condition for malformed rows or budget exhaustion."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:1-3",
+      "severity": "moderate",
+      "note": "The design relies on task instructions without structural limits on retries, runtime, spawning, or spend."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "store.shared_quota",
+      "kind": "data_store",
+      "name": "Shared enrichment API key and monthly quota"
+    }
+  ],
+  "controls": [],
+  "findings": [
+    {
+      "finding_id": "F01",
+      "title": "Spend loop (TC6): unbounded paid enrichment retries and recursive delegation can exhaust the shared monthly quota",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Nightly batch includes malformed rows that never produce complete enrichment."
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Each retry is a billed API call against a shared quota."
+        },
+        {
+          "ref": "cap.spawn_researcher",
+          "note": "Failed or incomplete rows can trigger sub agents, and sub agents can spawn their own researchers."
+        },
+        {
+          "ref": "store.shared_quota",
+          "note": "Quota depletion disrupts other teams using the same account."
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "store.shared_quota"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "The prompt instructs the agent to retry failed lookups or spawn a researcher, then 'Keep going until every row is complete.'"
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "There is no maximum on steps, runtime, retries, or sub agents, and sub agents can spawn their own researchers."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "enrich.lookup is billed per call, uses a shared API key and monthly quota, and other teams lose service when the quota runs out."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The nightly batch is 40,000 rows and roughly 3 percent have malformed company names that never return a complete result."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "There is no spend alert on the enrichment account."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Enforce hard caps on retries per row, total tool calls per batch, total sub agents, and maximum delegation depth; fail the row after the cap rather than continuing indefinitely.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            },
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MANAGE 1.3",
+              "framework_edition": "1.0"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Apply a spend and quota budget for this agent that is isolated from sales and marketing, or use a dedicated least-privilege API key with its own quota allocation.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-5"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add spend alerts and anomaly detection on lookup volume, retry rate, and spawned sub-agent count per batch.",
+          "priority": "p2",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MEASURE 3.1",
+              "framework_edition": "1.0"
+            },
+            {
+              "framework": "ISO_42001",
+              "id": "8.2"
+            }
+          ],
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "cascading_failure",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 3.1",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "8.2"
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      },
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "autonomy_increase",
+          "control_removal",
+          "intended_purpose_change"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Median tool calls, retries per failed row, runtime per batch, or spawned sub-agent count rises; prompt or product changes broaden completion expectations."
+      }
+    },
+    {
+      "finding_id": "F02",
+      "title": "Runaway delegation amplifies batch cost and service disruption because recursive sub agents are allowed with no runtime bounds",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Rows that remain incomplete can trigger delegation."
+        },
+        {
+          "ref": "cap.spawn_researcher",
+          "note": "Researchers can spawn their own researchers recursively."
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Delegated work can continue invoking the paid API without global limits."
+        },
+        {
+          "ref": "store.shared_quota",
+          "note": "Shared quota exhaustion stops dependent business tools."
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.spawn_researcher",
+        "cap.enrich_lookup",
+        "store.shared_quota"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0029",
+          "name": "Denial of AI Service",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "There is no maximum on steps, runtime, retries, or sub agents."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Sub agents can spawn their own researchers."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "The prompt directs delegation when lookups fail or look incomplete and gives no termination rule other than completion."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The quota is shared across teams, so exhaustion creates a cross-team service outage until the next month."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Disable recursive spawning or enforce a delegation depth of 1 and a bounded per-account work plan.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-5"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Introduce a global batch orchestrator budget that stops all descendant agents once the per-batch call, runtime, or spend threshold is reached.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MANAGE 1.3",
+              "framework_edition": "1.0"
+            },
+            {
+              "framework": "ISO_42001",
+              "id": "8.2"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "corrective",
+          "mechanism": "structural",
+          "action": "Add automatic circuit breakers that suspend enrichment when malformed-row failure rates or recursive spawn patterns exceed baseline.",
+          "priority": "p2",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MANAGE 4.1",
+              "framework_edition": "1.0"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "cascading_failure",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2"
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      },
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "autonomy_increase",
+          "control_removal",
+          "intended_purpose_change"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Task runtime, delegation depth, or descendant-agent count per row increases, or the completion policy is changed to require higher confidence before a row can stop."
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "Manual validation applied from validation_checklist.md because scripts could not be run. Present design evidence shows internal batch input can trigger S3 spend and delegation behavior under A4 autonomy with no preventive, containment, detective, or approval controls declared. Residual therefore remains at inherent. Forecast remains critical because there are no controls to decay; the main risk is already present. Missing artifacts such as tool manifest, source code, and runtime config limit precision on exact call graph details but do not change the tier because the documented design already establishes unbounded paid looping and recursive delegation."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in the provided artifacts, not observed runtime behavior.",
+    "No tool manifest, source code, or machine-readable runtime configuration was provided, so capability wiring and quota enforcement were assessed from the prompt and runtime notes only.",
+    "No observed telemetry or historical batch metrics were provided, so likelihood is based on declared workload characteristics rather than measured execution traces."
+  ]
+}

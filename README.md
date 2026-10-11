@@ -54,19 +54,11 @@ For every repository you work in, copy it to your personal skills folder instead
 
 ### Claude
 
-- **Claude Code:** install it as a plugin from this repository's marketplace:
-
-  ```
-  /plugin marketplace add camaleon2016/PARAtrooper
-  /plugin install para@paratrooper
-  ```
-
-  Or copy `skills/para` to `.claude/skills/para` in a project, or to `~/.claude/skills/para` for all projects.
-- **Claude apps:** zip the `skills/para` folder and upload it as a custom skill.
+Copy `skills/para` to `.claude/skills/para` in a project, or to `~/.claude/skills/para` for all projects. In the Claude apps, upload it as a custom skill.
 
 ### What has been measured
 
-Published eval results so far cover Claude only. Results for other models are being added; see [Results](#results). A model that has not been evaluated may run the skill well or poorly, so check its output against the checklist the first few times.
+Eval results are published for two model families: Claude (claude-sonnet-5) and OpenAI GPT-5.4 on Azure; see [Results](#results). A model that has not been evaluated may run the skill well or poorly, so check its output against the checklist the first few times.
 
 ## Layout
 
@@ -131,6 +123,24 @@ $env:AZURE_OPENAI_API_KEY = "<key>"
 Use one `--out` folder per model. Each run records token use and cost in a `run_NNN.meta.json` sidecar, and the folder's `manifest.json` records the model, provider, endpoint host (never the key), and every limit used. Run outputs are committed with each published result so reviewers can audit them.
 
 ## Results
+
+### Across models
+
+The same 13 cases, 5 runs each, with the same rubric and schema:
+
+| Measure | Claude (claude-sonnet-5) | GPT-5.4 (Azure) |
+|---|---|---|
+| Mean recall | 96% | 93% |
+| Validator clean | 95% | 92% |
+| Runs with a false positive | 4 of 65 | 0 of 65 |
+| GitHub MCP backtest (May 2025): recall, rated critical | 100%, every run | 100%, every run |
+| Supabase MCP backtest (July 2025): recall, rated critical | 88%, every run | 100%, every run |
+| Lowest main path residual agreement | 80% | 40% |
+| Mean output tokens per assessment | 29,264 | 4,391 |
+
+Details: [Claude results](evals/RESULTS.md) and [notes](evals/RESULTS_NOTES.md); [GPT-5.4 results](evals/runs-gpt-54/RESULTS.md) and [notes](evals/runs-gpt-54/RESULTS_NOTES.md). The GPT-5.4 batch cost $4.76 at Azure list prices.
+
+### By version
 
 The latest batch is in [evals/RESULTS.md](evals/RESULTS.md). Each released batch is archived with its run files and notes under `evals/archive/<version>/`:
 
