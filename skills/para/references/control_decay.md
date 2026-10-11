@@ -48,6 +48,16 @@ Wiring and remembered approvals:
 - **Wire every gate.** A human approval control that gates a capability must be named in that capability's `approval_gate_ref`. Listing it only in `covers` earns step 3 credit instead of step 2, and runs that wire it differently will disagree on residual.
 - **A remembered approval is not a gate.** When approval is granted once and then remembered ("always allow," approve once per session or per tool), later calls are not reviewed at all. Record the control so reviewers see it, but do not set it as `approval_gate_ref`, leave its `covers` empty, and say in `decay_rationale` that later calls are unreviewed. It earns no credit.
 
+## Missing controls
+
+Record the controls a design lacks, not only the ones it has. Every structural recommendation becomes a control with `status: missing_recommended`, `mechanism`, `capability_dependence`, and `covers` set to the capability or input it would protect. Missing controls earn no residual credit; they exist so that:
+
+- reviewers get an explicit list of absent controls, which is often the most useful part of an assessment;
+- forecasts and recommendations can name the control that would close a path;
+- runs of the same design record the same control set, which keeps residual floors consistent.
+
+In the GPT-5.4 batch (v0.3.4), runs recorded about as many declared controls as Claude but far fewer missing ones, naming the fixes only in recommendations. The validator now warns when a finding has structural recommendations but no missing control on its path.
+
 ## Forecast triggers and watch signals
 
 These double as the ISO/IEC 42001 8.2 significant change criteria. Any trigger that occurs means the assessment must be run again.

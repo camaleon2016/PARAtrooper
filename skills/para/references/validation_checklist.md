@@ -6,7 +6,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Structure
 
-1. **Error:** the document matches `schema/assessment.schema.json`: every required field is present, every enum value is one the schema lists, and no field appears that the schema does not define.
+1. **Error:** the document matches `schema/assessment.schema.json`: every required field is present, every enum value is one the schema lists, and no field appears that the schema does not define. Watch `peer_trust_level` (no `third_party` or `external`; use `untrusted`) and keep governance frameworks out of `threat_refs`.
 2. **Error:** no id is used twice across inputs, capabilities, controls, elements, and findings.
 
 ## References
@@ -34,9 +34,10 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 17. **Warning:** for present findings, `inherent_risk` matches the rubric's base matrix and autonomy modifier (rubric section 4).
 18. **Warning:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5), and if it is above that floor, `residual_rationale` explains why.
 19. **Warning:** any finding with residual above `low` has at least one recommendation.
-20. **Error:** a treatment with option `accept` names `treatment.approved_by`.
+20. **Warning:** a finding with structural preventive or containment recommendations has at least one `missing_recommended` control whose `covers` includes an id on its attack path.
+21. **Error:** a treatment with option `accept` names `treatment.approved_by`.
 
 ## Rating and limitations
 
-21. **Error:** `rating.inherent`, `rating.residual`, and `rating.forecast` each equal the highest value of that tier across findings (rubric section 7).
-22. **Error:** `limitations` states that the assessment reflects the declared design, not observed runtime behavior.
+22. **Error:** `rating.inherent`, `rating.residual`, and `rating.forecast` each equal the highest value of that tier across findings (rubric section 7).
+23. **Error:** `limitations` states that the assessment reflects the declared design, not observed runtime behavior.

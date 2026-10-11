@@ -4,7 +4,7 @@ license: Apache-2.0
 compatibility: Runs on any agent platform that supports Agent Skills. Validation and reports need Python 3.10+ (jsonschema optional); without code execution, use references/validation_checklist.md.
 metadata:
   author: Jay White
-  version: "0.3.4"
+  version: "0.3.5"
   repository: https://github.com/camaleon2016/PARAtrooper
 description: Preemptive risk assessment for AI agents, MCP servers, and agent to agent designs. Use whenever the user shares a system prompt, tool list, MCP configuration, agent card, or agent architecture and wants risk rated, controls evaluated, security gaps found, or future risk predicted, even if they only ask "is this agent safe" or "review my agent."
 ---
@@ -72,7 +72,7 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 
 - For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary`. If the approver sees arguments only behind a collapsed link, use `model_summary`.
 - Set `severs_path: true` only on a structural, independent, preventive control that makes the sink unreachable under any model behavior, and cite the evidence for that claim in the finding. A control that only narrows the path does not sever it.
-- Add `missing_recommended` controls where a structural control would sever a path.
+- **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
 - Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result.
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
@@ -92,7 +92,12 @@ Roll up to `rating` (section 7). Add structural recommendations first. Set `trea
 
 ### 10. Emit and validate
 
-1. Write the JSON. Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
+1. Write the JSON, using only the values the schema lists. Three fields are easy to confuse:
+   - `protocols[].peer_trust_level` is `trusted`, `internal`, `untrusted`, or `unknown`. A third party or external peer is `untrusted` (or `unknown`). `third_party` is a value of `subject.trust_domain` only.
+   - `threat_refs` holds threat frameworks: OWASP, MITRE ATLAS, SAFE-MCP, CoSAI. `governance_refs` holds governance and control frameworks: NIST AI RMF, ISO/IEC 42001, NIST SP 800-53.
+   - Element, attack path, and coverage references are ids from the document, never URLs, file paths, or package names.
+
+   Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
 2. Run `python scripts/validate.py <file>` (use `python3` or `py` if that is how Python is invoked here). Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
 3. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
 

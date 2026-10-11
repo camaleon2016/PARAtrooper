@@ -81,7 +81,7 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 
 - For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary`. If the approver sees arguments only behind a collapsed link, use `model_summary`.
 - Set `severs_path: true` only on a structural, independent, preventive control that makes the sink unreachable under any model behavior, and cite the evidence for that claim in the finding. A control that only narrows the path does not sever it.
-- Add `missing_recommended` controls where a structural control would sever a path.
+- **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
 - Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result.
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
@@ -101,7 +101,12 @@ Roll up to `rating` (section 7). Add structural recommendations first. Set `trea
 
 ### 10. Emit and validate
 
-1. Write the JSON. Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
+1. Write the JSON, using only the values the schema lists. Three fields are easy to confuse:
+   - `protocols[].peer_trust_level` is `trusted`, `internal`, `untrusted`, or `unknown`. A third party or external peer is `untrusted` (or `unknown`). `third_party` is a value of `subject.trust_domain` only.
+   - `threat_refs` holds threat frameworks: OWASP, MITRE ATLAS, SAFE-MCP, CoSAI. `governance_refs` holds governance and control frameworks: NIST AI RMF, ISO/IEC 42001, NIST SP 800-53.
+   - Element, attack path, and coverage references are ids from the document, never URLs, file paths, or package names.
+
+   Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
 2. Run `python scripts/validate.py <file>` (use `python3` or `py` if that is how Python is invoked here). Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
 3. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
 
@@ -166,6 +171,16 @@ Scoring (schema 0.3.0 and later):
 Wiring and remembered approvals:
 - **Wire every gate.** A human approval control that gates a capability must be named in that capability's `approval_gate_ref`. Listing it only in `covers` earns step 3 credit instead of step 2, and runs that wire it differently will disagree on residual.
 - **A remembered approval is not a gate.** When approval is granted once and then remembered ("always allow," approve once per session or per tool), later calls are not reviewed at all. Record the control so reviewers see it, but do not set it as `approval_gate_ref`, leave its `covers` empty, and say in `decay_rationale` that later calls are unreviewed. It earns no credit.
+
+## Missing controls
+
+Record the controls a design lacks, not only the ones it has. Every structural recommendation becomes a control with `status: missing_recommended`, `mechanism`, `capability_dependence`, and `covers` set to the capability or input it would protect. Missing controls earn no residual credit; they exist so that:
+
+- reviewers get an explicit list of absent controls, which is often the most useful part of an assessment;
+- forecasts and recommendations can name the control that would close a path;
+- runs of the same design record the same control set, which keeps residual floors consistent.
+
+In the GPT-5.4 batch (v0.3.4), runs recorded about as many declared controls as Claude but far fewer missing ones, naming the fixes only in recommendations. The validator now warns when a finding has structural recommendations but no missing control on its path.
 
 ## Forecast triggers and watch signals
 
@@ -610,7 +625,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Structure
 
-1. **Error:** the document matches `schema/assessment.schema.json`: every required field is present, every enum value is one the schema lists, and no field appears that the schema does not define.
+1. **Error:** the document matches `schema/assessment.schema.json`: every required field is present, every enum value is one the schema lists, and no field appears that the schema does not define. Watch `peer_trust_level` (no `third_party` or `external`; use `untrusted`) and keep governance frameworks out of `threat_refs`.
 2. **Error:** no id is used twice across inputs, capabilities, controls, elements, and findings.
 
 ## References
@@ -638,12 +653,13 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 17. **Warning:** for present findings, `inherent_risk` matches the rubric's base matrix and autonomy modifier (rubric section 4).
 18. **Warning:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5), and if it is above that floor, `residual_rationale` explains why.
 19. **Warning:** any finding with residual above `low` has at least one recommendation.
-20. **Error:** a treatment with option `accept` names `treatment.approved_by`.
+20. **Warning:** a finding with structural preventive or containment recommendations has at least one `missing_recommended` control whose `covers` includes an id on its attack path.
+21. **Error:** a treatment with option `accept` names `treatment.approved_by`.
 
 ## Rating and limitations
 
-21. **Error:** `rating.inherent`, `rating.residual`, and `rating.forecast` each equal the highest value of that tier across findings (rubric section 7).
-22. **Error:** `limitations` states that the assessment reflects the declared design, not observed runtime behavior.
+22. **Error:** `rating.inherent`, `rating.residual`, and `rating.forecast` each equal the highest value of that tier across findings (rubric section 7).
+23. **Error:** `limitations` states that the assessment reflects the declared design, not observed runtime behavior.
 
 ---
 
@@ -810,7 +826,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
             "third_party",
             "unknown"
           ],
-          "description": "Third party and unknown agents default to untrusted in composition analysis."
+          "description": "Who operates the agent under assessment: first_party (your organization), third_party (a vendor or outside party), or unknown. Third party and unknown agents default to untrusted in composition analysis. This vocabulary applies only here; protocol peers use peer_trust_level."
         },
         "model": {
           "type": "object",
@@ -1080,7 +1096,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
               "internal",
               "untrusted",
               "unknown"
-            ]
+            ],
+            "description": "How much the agent should trust what the peer sends: trusted (the principal's own authenticated channel), internal (operated inside the organization), untrusted (anything an outside party controls, including third party and external servers or agents), or unknown. There is no third_party or external value here: use untrusted, or unknown when the operator cannot be determined."
           },
           "technique_refs": {
             "type": "array",
@@ -1196,7 +1213,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
               "declared",
               "verified",
               "missing_recommended"
-            ]
+            ],
+            "description": "declared: the artifacts describe it. verified: evidence shows it is in place. missing_recommended: the design lacks it and you recommend it. Record every control a structural recommendation would add as missing_recommended, so reviewers get an explicit gap list and forecasts can name it."
           },
           "maestro_layer": {
             "$ref": "#/$defs/maestro_layer"
@@ -1591,7 +1609,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
             "SAFE_MCP",
             "COSAI",
             "OTHER"
-          ]
+          ],
+          "description": "Threat frameworks only. For NIST AI RMF, ISO/IEC 42001, NIST SP 800-53, COSAiS, or IMDA, use governance_refs instead."
         },
         "id": {
           "type": "string"
@@ -1603,7 +1622,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
           "type": "string",
           "description": "Edition or version, for example 2026 or 2026.09. Required for unambiguous ids across editions."
         }
-      }
+      },
+      "description": "A threat taxonomy or attack technique reference. Governance and control frameworks (NIST AI RMF, ISO/IEC 42001, NIST SP 800-53, COSAiS, IMDA) are not threat frameworks; put them in governance_refs."
     },
     "governance_ref": {
       "type": "object",
@@ -1634,7 +1654,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
         "note": {
           "type": "string"
         }
-      }
+      },
+      "description": "A governance, management system, or control framework reference. Threat taxonomies and attack techniques (OWASP, MITRE ATLAS, SAFE-MCP) go in threat_refs."
     },
     "maestro_layer": {
       "enum": [

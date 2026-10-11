@@ -675,3 +675,21 @@ def test_clients_get_retry_setting(monkeypatch):
     client, _ = run_skill.make_client(args)
     assert client.max_retries == 8
     assert run_skill.build_parser().parse_args([]).max_retries == 8
+
+
+def test_enum_hints_point_to_the_right_value_or_field():
+    doc = example()
+    doc["protocols"][0]["peer_trust_level"] = "third_party"
+    doc["findings"][0]["threat_refs"].append({"framework": "NIST_AI_RMF", "id": "MEASURE 2.7", "framework_edition": "1.0"})
+    errors, _ = run(doc)
+    assert has(errors, "hint: use 'untrusted'")
+    assert has(errors, "belong in governance_refs, not threat_refs")
+
+
+def test_structural_recommendation_needs_a_missing_control_on_the_path():
+    doc = example()
+    doc["controls"] = [c for c in doc["controls"] if c["status"] != "missing_recommended"]
+    _, warnings = run(doc)
+    assert has(warnings, "structural recommendation(s) but no missing_recommended control")
+    _, warnings = run(example())
+    assert not has(warnings, "no missing_recommended control")

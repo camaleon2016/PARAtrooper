@@ -37,7 +37,9 @@ Copy-Item $env:TEMP\PARAtrooper\skills\para <your repo>\.github\skills\para -Rec
 
 For every repository you work in, copy it to your personal skills folder instead: `~/.copilot/skills/para` (on Windows, `$HOME\.copilot\skills\para`).
 
-### Azure AI Foundry and Azure OpenAI
+Verified in VS Code agent mode: Copilot discovered the skill, ran the validator, and produced valid assessments. See [evals/runs-copilot/NOTES.md](evals/runs-copilot/NOTES.md).
+
+### Microsoft AI Foundry and Azure OpenAI
 
 - **Foundry agents and other prompt based apps:** use `dist/para-prompt.md`, the whole skill in one file. Use it as the agent's instructions where the platform allows prompts that long (about 21,000 tokens), or upload it as a knowledge file and instruct the agent to follow it when asked to assess an agent design.
 - **Your own app or pipeline:** send `dist/para-prompt.md` as the system prompt to any Azure OpenAI or Foundry model deployment through the v1 endpoint (`https://<resource>.openai.azure.com/openai/v1/`). `evals/run_skill.py --provider openai` is a working example.
