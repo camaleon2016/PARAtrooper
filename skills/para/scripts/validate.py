@@ -132,6 +132,24 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
     return tier_max([shift(inherent, -credit), floor])
 
 
+# Values models commonly reach for in the wrong field, with where they belong. Seen in the GPT-5.4 batch:
+# third_party and external in peer_trust_level, and NIST_AI_RMF in threat_refs.
+GOVERNANCE_FRAMEWORKS = {"NIST_AI_RMF", "NIST_AI_600_1", "ISO_42001", "NIST_SP_800_53", "NIST_COSAIS", "IMDA_MGF_AGENTIC"}
+
+
+def enum_hint(path: str, value) -> str:
+    leaf = path.rsplit("/", 1)[-1]
+    if leaf == "peer_trust_level" and value in {"third_party", "external", "outside", "vendor"}:
+        return ("; hint: use 'untrusted' for any peer an outside party controls, or 'unknown' "
+                "(third_party is a value of subject.trust_domain, not of peer_trust_level)")
+    if leaf == "framework" and "/threat_refs/" in f"/{path}/" and value in GOVERNANCE_FRAMEWORKS:
+        return "; hint: governance and control frameworks belong in governance_refs, not threat_refs"
+    if leaf == "framework" and "/governance_refs/" in f"/{path}/" and value in {
+            "OWASP_AGENTIC", "OWASP_LLM_TOP10", "MITRE_ATLAS", "SAFE_MCP", "COSAI"}:
+        return "; hint: threat taxonomies and attack techniques belong in threat_refs, not governance_refs"
+    return ""
+
+
 def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -140,7 +158,7 @@ def check(doc: dict, schema: dict) -> tuple[list[str], list[str]]:
         validator = Draft202012Validator(schema, format_checker=FormatChecker())
         for err in sorted(validator.iter_errors(doc), key=lambda e: list(e.absolute_path)):
             path = "/".join(str(p) for p in err.absolute_path) or "<root>"
-            errors.append(f"schema: {path}: {err.message}")
+            errors.append(f"schema: {path}: {err.message}{enum_hint(path, err.instance)}")
     else:
         warnings.append("schema check skipped: jsonschema is not installed (pip install jsonschema); rubric checks ran")
         if not isinstance(doc, dict):
@@ -286,6 +304,18 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
                 )
         if not f.get("recommendations") and RANK[f["residual_risk"]] >= RANK["moderate"]:
             warnings.append(f"{fid}: residual {f['residual_risk']} with no recommendations")
+        # A structural fix named only in prose leaves no gap list for reviewers and nothing for a forecast to
+        # name. In the GPT-5.4 batch, runs recorded far fewer missing controls than they recommended.
+        structural_recs = [r for r in f.get("recommendations", [])
+                           if r.get("mechanism") == "structural" and r.get("category") in {"preventive", "containment"}]
+        path_refs = {s["ref"] for s in f.get("attack_path", [])} | set(f.get("toxic_combination", []))
+        missing_on_path = [c for c in controls.values()
+                           if c["status"] == "missing_recommended" and path_refs & set(c.get("covers", []))]
+        if structural_recs and path_refs and not missing_on_path:
+            warnings.append(
+                f"{fid}: {len(structural_recs)} structural recommendation(s) but no missing_recommended control "
+                "covering the attack path; record each recommended control (control_decay.md, missing controls)"
+            )
         if f.get("treatment", {}).get("option") == "accept" and not f["treatment"].get("approved_by"):
             errors.append(f"{fid}: accepted risk requires treatment.approved_by (ISO/IEC 42001 6.1.3)")
 

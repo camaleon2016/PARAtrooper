@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.3.4 (unreleased)
+## 0.3.5 (unreleased)
+
+Two model independent fixes exposed by the GPT-5.4 batch (see `evals/runs-gpt-54/RESULTS_NOTES.md`). Rubric unchanged (0.2.2). Schema structure unchanged (0.5.0); only field descriptions changed.
+
+### Changed
+- Schema descriptions now state the allowed values of `peer_trust_level` (a third party or external peer is `untrusted`, or `unknown`) and of `subject.trust_domain`, and which frameworks belong in `threat_refs` versus `governance_refs`. Four of GPT-5.4's five failures put `third_party` or `external` in `peer_trust_level`, and one put `NIST_AI_RMF` in `threat_refs`.
+- SKILL.md step 10 names the three fields that are easy to confuse. Step 7 requires every structural recommendation to be recorded as a `missing_recommended` control covering the path.
+- `control_decay.md` adds a Missing controls section, and `validation_checklist.md` adds the new warning.
+- The example assessment records its two recommended controls as missing controls.
+
+### Added
+- Validator hints on schema errors: a wrong `peer_trust_level` value or a framework in the wrong list now says what to use instead, so a model that runs the validator can correct itself.
+- Validator warning when a finding has structural recommendations but no `missing_recommended` control covering its attack path. In the GPT-5.4 batch, runs recorded far fewer missing controls than Claude while naming the same fixes in recommendations.
+- The eval harness prints the API error message in each run's status line instead of only "api error".
+
+## 0.3.4 (2026-10-10)
 
 Portability release. Rubric, schema, and scoring are unchanged (rubric 0.2.2, schema 0.5.0), so the v0.3.3 Claude results still describe how the skill rates risk.
 

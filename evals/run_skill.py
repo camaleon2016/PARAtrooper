@@ -434,7 +434,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
                 failures += 1
             except api_errors as exc:
                 doc = {"_parse_error": f"api error: {exc}"}
-                status = "api error"
+                status = f"api error: {' '.join(str(exc).split())[:200]}"
                 failures += 1
             out.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
             # Token usage, cost, and timing go in a sidecar so the assessment itself stays schema valid.
