@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.5 (unreleased)
+## 0.3.5 (2026-10-12)
 
 Measured on Claude and GPT-5.4: validator clean 100% and 98%, recall 95% and 93%; GPT-5.4's vocabulary failures fell from 5 to 0 and its recorded missing controls doubled. See `evals/runs-claude-v035/` and `evals/runs-gpt-54-v035/`.
 
