@@ -102,7 +102,16 @@ def score_run(doc: dict, exp: dict, schema: dict) -> dict:
         "recall": hits / total if total else 1.0,
         "false_positives": fp,
         "main_path_residual": main_path_residual(findings, req_paths),
+        "stride_na_rate": stride_na_rate(doc),
     }
+
+
+def stride_na_rate(doc: dict) -> float | None:
+    """Share of STRIDE coverage pairs marked not_applicable, or None before schema 0.6.0."""
+    coverage = doc.get("stride_coverage")
+    if not coverage:
+        return None
+    return sum(1 for e in coverage if e.get("status") == "not_applicable") / len(coverage)
 
 
 def main_path_residual(findings: list[dict], req_paths: list[list[str]]) -> str | None:
@@ -123,7 +132,7 @@ def invalid_result(reason: str) -> dict:
     return {
         "valid": False, "errors": 1, "warnings": 0, "error_detail": reason,
         "rating": {k: None for k in FIELDS}, "in_range": {k: False for k in FIELDS},
-        "recall": 0.0, "false_positives": 0, "main_path_residual": None,
+        "recall": 0.0, "false_positives": 0, "main_path_residual": None, "stride_na_rate": None,
     }
 
 
@@ -153,6 +162,8 @@ def case_stats(results: list[dict]) -> dict:
         stats[k] = {"mode": mode, "agreement": mode_n / n, "in_range": sum(r["in_range"][k] for r in results) / n}
     main = [r.get("main_path_residual") for r in results]
     stats["main_path_residual"] = (Counter(main).most_common(1)[0][1] / n) if any(main) else None
+    na = [r["stride_na_rate"] for r in results if r.get("stride_na_rate") is not None]
+    stats["stride_na_rate"] = sum(na) / len(na) if na else None
     return stats
 
 
@@ -169,7 +180,8 @@ def mean_output_tokens(runs_dir: Path) -> float | None:
     return sum(counts) / len(counts) if counts else None
 
 
-def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict) -> str:
+def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict,
+                    heldout: set[str] | None = None) -> str:
     """Summary table suitable for publishing in the README or a release."""
     lines = ["# PARA eval results", "",
              "Validator clean means the assessment parsed, matched the schema, and passed every rubric "
@@ -193,6 +205,16 @@ def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict) -
             return sum(s[key] * s["runs"] for s in stats.values()) / total_runs
         lines += ["", f"Overall: {total_runs} runs, validator clean {weighted('valid'):.0%}, "
                       f"mean recall {weighted('recall'):.0%}."]
+        na = [s["stride_na_rate"] for s in stats.values() if s.get("stride_na_rate") is not None]
+        if na:
+            lines.append(f"STRIDE coverage pairs marked not applicable: {sum(na) / len(na):.0%} on average.")
+        held = {c: s for c, s in stats.items() if c in (heldout or set())}
+        if held:
+            held_runs = sum(s["runs"] for s in held.values())
+            lines += ["", "Held out cases (written before this version and never used to tune it):"]
+            lines += [f"- {c}: recall {s['recall']:.0%}, inherent in range {s['inherent']['in_range']:.0%}, "
+                      f"residual in range {s['residual']['in_range']:.0%}" for c, s in held.items()]
+            lines.append(f"- held out mean recall {sum(s['recall'] * s['runs'] for s in held.values()) / held_runs:.0%}")
         tokens = [s["mean_output_tokens"] for s in stats.values() if s.get("mean_output_tokens")]
         if tokens:
             lines.append(f"Mean output tokens per assessment: {sum(tokens) / len(tokens):,.0f}.")
@@ -255,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: no expected file for case '{args.case}'", file=sys.stderr)
             return 2
 
-    all_ok, report, dump, stats, kinds = True, [], {}, {}, {}
+    all_ok, report, dump, stats, kinds, heldout = True, [], {}, {}, {}, set()
     for exp_path in expected_files:
         exp = json.loads(exp_path.read_text(encoding="utf-8-sig"))
         case_id = exp["case_id"]
@@ -269,6 +291,8 @@ def main(argv: list[str] | None = None) -> int:
         results = [score_file(p, exp, schema) for p in run_files]
         dump[case_id] = results
         stats[case_id], kinds[case_id] = case_stats(results), exp.get("kind", "")
+        if exp.get("heldout"):
+            heldout.add(case_id)
         stats[case_id]["mean_output_tokens"] = mean_output_tokens(runs_dir)
         lines, ok = summarize(case_id, results, args.min_agreement)
         report += lines
@@ -280,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.report:
         manifest_path = args.runs_dir / "manifest.json"
         meta = json.loads(manifest_path.read_text(encoding="utf-8-sig")) if manifest_path.exists() else {}
-        args.report.write_text(markdown_report(stats, kinds, meta), encoding="utf-8")
+        args.report.write_text(markdown_report(stats, kinds, meta, heldout), encoding="utf-8")
     return 0 if all_ok else 1
 
 

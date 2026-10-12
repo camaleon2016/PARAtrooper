@@ -1,6 +1,6 @@
 # PARA Rubric
 
-Rubric version: 0.2.2. Applies to schema 0.5.x.
+Rubric version: 0.3.0. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -80,15 +80,17 @@ Credits are applied in this order. A finding cannot drop below `low`. **Each con
 
 | Step | Control on the path | Credit |
 |---|---|---|
-| 1 | Structural, independent, preventive control that **severs** the path, recorded with `severs_path: true` and evidence. The sink cannot be reached from the source under any model behavior. Examples: an egress allowlist that excludes attacker controlled destinations, or a credential scoped so the sensitive data cannot be read. | Residual = `low`. Stop. |
-| 2 | Human approval gate on the sink (structural), referenced by the capability's `approval_gate_ref` | -2 tiers. The final residual cannot go below `moderate` unless the gate has `approval_review_mode: raw_action` (the approver sees the full destination and payload from the system of record). A gate with no `approval_review_mode` is scored as `model_summary`. |
-| 3 | Structural preventive or containment controls that are `independent` or `partially_dependent` and **narrow** without severing (rate limit, spend cap, partial credential scoping, sandbox with egress, or an independent control without a severing claim) | -1 tier total for this step, however many there are |
+| 1 | Structural, independent, preventive control that **severs** the path, recorded with `severs_path: true` and evidence. Set it only after answering yes to all three: is the control enforced outside the model; does it work regardless of model capability; and does it make the sink **unreachable** from the source, not merely harder to reach? Examples: an egress allowlist that excludes attacker controlled destinations, or a credential scoped so the sensitive data cannot be read. | Residual = `low`. Stop. |
+| 2 | Human approval gate on the sink (structural), referenced by the capability's `approval_gate_ref` | Credit depends on `approval_volume`: `low` earns -2 tiers; `high` or `unknown` earns -1. The final residual cannot go below `moderate` unless the gate has `approval_review_mode: raw_action` **and** `approval_volume: low`. A gate with no review mode is scored as `model_summary`; with no volume, as `unknown`. |
+| 3 | Structural preventive or containment controls that are `independent` or `partially_dependent`, **narrow** without severing, and **constrain the sink** of the path they cover (`constrains_sink: true`): a rate limit or spend cap on the sink, partial credential scoping, a recipient restriction. A sandbox that leaves the sink reachable (for example, unrestricted network egress) does not constrain it and earns nothing here. | -1 tier total for this step, however many there are |
 | 4 | Behavioral controls, and any control marked `dependent` | -1 tier total for this step, however many there are |
 | 5 | Detective and corrective controls | No tier credit. Record them. They reduce `consequence` by at most one step when detection happens before harm completes. |
 
 The credit caps in steps 3 and 4 are deliberate. Stacking five prompt instructions does not make an agent five times safer. Without the caps, teams could lower their rating by adding text.
 
 The `partially_dependent` structural controls (for example, a tool allowlist that can be chained around) are credited at step 3.
+
+Approval volume (step 2): use `low` only when the design says an approver sees few enough requests to review each one. Dozens or more a day, or approval granted once and remembered, is `high`. When the artifacts do not say, use `unknown`. The v0.3.x backtests showed why: the GitHub MCP incident's approval prompt failed under real approval volume, and both Claude and GPT-5.4 runs judged it weaker than the old two tier credit.
 
 The approval gate floor applies to the final residual, after steps 3 and 4. Stacking other controls on top of a summary gate cannot push the residual below `moderate`, because the approver is still deciding on the model's description of the action.
 
@@ -99,6 +101,20 @@ The approval gate floor applies to the final residual, after steps 3 and 4. Stac
 The v0.3.1 eval batch showed why this rule exists: every run kept residual at or above the floor, but some runs raised it by unstated judgment, so runs of the same design disagreed. Stating the reason makes the disagreement reviewable.
 
 **Worked example** (`examples/support_agent.assessment.json`): the untrusted email reaches CRM read and then email send. The sink is S3 (irreversible egress of confidential data). Inherent is `critical`. The only preventive control is a prompt rule (behavioral, dependent), so step 4 applies: -1 gives a residual of `high`. Outbound logging is detective, so it gets no tier credit.
+
+## 5a. Property findings
+
+Some risks have no attack path: a missing property such as attributable provenance, a spend or step limit, or a rate limit. Record them as findings with `finding_kind: property`, list the affected capabilities in `affected_refs`, and leave `attack_path` empty.
+
+1. **Sink class.** Take the highest sink class (section 2) among `affected_refs`.
+2. **Base tier.** Use the **I row** of the base matrix: S3 `high`, S2 `moderate`, S1 and S0 `low`. A missing property is exposed to internal error and misuse as readily as to an attacker.
+3. **Autonomy modifier.** Apply section 4's modifier.
+4. **Cap.** A property finding alone never exceeds `high`. `critical` is reserved for complete attack paths. When a missing property makes a path finding worse (for example, no provenance on the exfiltration path), record it on the path finding instead.
+5. **Residual.** Controls that restore the missing property earn credit at the step their mechanism qualifies for. Tamper evident action provenance is structural preventive for repudiation; a hard spend cap or step limit is structural preventive for denial of service. Prompt instructions never restore either.
+
+### Designs with no complete path today
+
+When no untrusted source reaches a sensitive sink today, there is no present path finding above `low`. Risks that depend on planned changes are `horizon: forecast` findings. Do not promote them to present findings to make them visible; the forecast rating carries them.
 
 ## 6. Forecast risk
 
