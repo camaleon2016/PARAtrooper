@@ -124,7 +124,7 @@ def test_residual_below_control_floor_warns():
 
 def recipient_binding(**extra):
     control = {
-        "control_id": "ctl.recipient_binding",
+        "control_id": "ctl.recipient_allowlist",
         "name": "Recipient bound to ticket record",
         "category": "preventive",
         "mechanism": "structural",
@@ -152,7 +152,7 @@ def test_severing_control_allows_low_residual():
 def test_independent_control_without_severs_path_only_narrows():
     # Rubric step 1 needs an explicit severing claim. Without it the control earns step 3 credit only.
     doc = with_low_residual(example())
-    doc["controls"].append(recipient_binding())
+    doc["controls"].append(recipient_binding(constrains_sink=True))
     _, warnings = run(doc)
     assert has(warnings, "below what path controls can justify ('moderate')")
 
@@ -201,6 +201,7 @@ def test_summary_gate_floors_residual_at_moderate():
 
 def test_raw_action_gate_allows_low_residual():
     doc = gated_example("raw_action")
+    doc["controls"][-1]["approval_volume"] = "low"
     caps = {c["capability_id"]: c for c in doc["capabilities"]}
     controls = {c["control_id"]: c for c in doc["controls"]}
     assert validate.residual_floor(doc["findings"][0], caps, controls) == "low"
@@ -447,7 +448,7 @@ def test_elements_and_peers_are_referenceable():
     doc["controls"][1]["covers"] = ["cap.email_send", "store.quota", "mail_mcp"]
     doc["findings"][0]["toxic_combination"].append("store.quota")
     errors, _ = run(doc)
-    assert not errors
+    assert not [e for e in errors if not e.startswith("stride_coverage/store.quota/")]
 
 
 def test_unknown_references_still_fail():
@@ -568,8 +569,8 @@ def test_validation_checklist_covers_every_validator_error():
     source = (ROOT / "skills" / "para" / "scripts" / "validate.py").read_text(encoding="utf-8")
     checklist = (ROOT / "skills" / "para" / "references" / "validation_checklist.md").read_text(encoding="utf-8")
     error_rules = len(re.findall(r"errors\.append\(", source))
-    assert checklist.count("**Error:**") >= 15, "checklist lost error rules"
-    assert error_rules <= 30, "validator grew; review validation_checklist.md and raise this bound"
+    assert checklist.count("**Error:**") >= 18, "checklist lost error rules"
+    assert error_rules <= 45, "validator grew; review validation_checklist.md and raise this bound"
 
 
 class _Obj:  # pylint: disable=too-few-public-methods
@@ -693,3 +694,113 @@ def test_structural_recommendation_needs_a_missing_control_on_the_path():
     assert has(warnings, "structural recommendation(s) but no missing_recommended control")
     _, warnings = run(example())
     assert not has(warnings, "no missing_recommended control")
+
+
+def _floor(doc):
+    caps = {c["capability_id"]: c for c in doc["capabilities"]}
+    controls = {c["control_id"]: c for c in doc["controls"]}
+    return validate.residual_floor(doc["findings"][0], caps, controls)
+
+
+def test_approval_volume_sets_gate_credit():
+    # Low volume raw action gate: -2 and floor low. High or unknown volume: -1, floor moderate.
+    low = gated_example("raw_action")
+    low["controls"][-1]["approval_volume"] = "low"
+    high = gated_example("raw_action")
+    high["controls"][-1]["approval_volume"] = "high"
+    unknown = gated_example("raw_action")
+    # The example also has a behavioral prompt rule on the path (step 4, -1).
+    assert _floor(low) == "low"
+    assert _floor(high) == "moderate"
+    assert _floor(unknown) == _floor(high)
+
+
+def test_containment_credit_requires_constraining_the_sink():
+    doc = example()
+    doc["controls"].append(recipient_binding())
+    without = _floor(doc)
+    doc["controls"][-1]["constrains_sink"] = True
+    assert RANK_OF[without] - RANK_OF[_floor(doc)] == 1
+
+
+RANK_OF = {"low": 0, "moderate": 1, "high": 2, "critical": 3}
+
+
+def property_example(kind_ok=True):
+    doc = example()
+    f = copy.deepcopy(doc["findings"][0])
+    f.update({"finding_id": "f.no_provenance", "title": "No attributable record of sends",
+              "finding_kind": "property", "affected_refs": ["cap.email_send"], "attack_path": [],
+              "toxic_combination": [], "stride": ["repudiation"], "inherent_risk": "high", "residual_risk": "high"})
+    f["forecast"]["projected_risk"] = "high"
+    f["recommendations"] = []
+    if not kind_ok:
+        f["attack_path"] = [{"ref": "cap.email_send"}]
+    doc["findings"].append(f)
+    for e in doc["stride_coverage"]:
+        if e["element_id"] == "support-triage" and e["category"] == "repudiation":
+            e.update({"status": "finding", "finding_ids": ["f.no_provenance"], "control_ids": []})
+    return doc
+
+
+def test_property_finding_uses_internal_row_and_caps_at_high():
+    errors, warnings = run(property_example())
+    assert not errors, errors
+    assert not has(warnings, "f.no_provenance: rubric computes inherent")
+    doc = property_example()
+    doc["findings"][-1]["inherent_risk"] = "critical"
+    doc["findings"][-1]["residual_risk"] = "critical"
+    doc["findings"][-1]["forecast"]["projected_risk"] = "critical"
+    _, warnings = run(doc)
+    assert has(warnings, "rubric computes inherent 'high'")
+    errors, _ = run(property_example(kind_ok=False))
+    assert has(errors, "a property finding has no attack_path")
+
+
+def test_stride_coverage_is_required_and_complete():
+    doc = example()
+    del doc["stride_coverage"]
+    errors, _ = run(doc)
+    assert has(errors, "stride_coverage: missing")
+    doc = example()
+    doc["stride_coverage"] = [e for e in doc["stride_coverage"] if e["element_id"] != "store.crm"]
+    errors, _ = run(doc)
+    assert has(errors, "stride_coverage/store.crm/information_disclosure: no entry")
+
+
+def test_stride_coverage_entry_rules():
+    doc = example()
+    for e in doc["stride_coverage"]:
+        if (e["element_id"], e["category"]) == ("support-triage", "repudiation"):
+            e["control_ids"] = ["ctl.recipient_binding"]  # a missing control cannot mitigate
+        if (e["element_id"], e["category"]) == ("store.crm", "tampering"):
+            e["rationale"] = "n/a"
+    doc["stride_coverage"].append({"element_id": "ext.customer", "category": "tampering", "status": "not_applicable",
+                                   "rationale": "Customers do not have a tampering category in this table."})
+    errors, _ = run(doc)
+    assert has(errors, "a missing control cannot mitigate")
+    assert has(errors, "store.crm/tampering: not_applicable needs a rationale")
+    assert has(errors, "category does not apply to a external_entity element")
+
+
+def test_behavioral_mitigation_and_na_rate_warnings():
+    doc = example()
+    for e in doc["stride_coverage"]:
+        if (e["element_id"], e["category"]) == ("support-triage", "repudiation"):
+            e["control_ids"] = ["ctl.prompt_rule"]
+        elif e["status"] == "not_assessed":
+            e.update({"status": "not_applicable"})
+    errors, warnings = run(doc)
+    assert has(warnings, "behavioral control 'ctl.prompt_rule' cannot restore")
+    assert has(warnings, "pairs marked not_applicable")
+
+
+def test_report_shows_coverage_matrix_and_heldout_section():
+    text = render_report.render(example(), "reviewer")
+    assert "### STRIDE coverage" in text and "| `store.crm` | data\\_store |" in text
+    results = [run_consistency.score_run(example(), json.loads(
+        (ROOT / "evals" / "expected" / "01_support_triage.expected.json").read_text(encoding="utf-8")), SCHEMA)]
+    stats = {"14_heldout_mfa_reset_gate": run_consistency.case_stats(results)}
+    report = run_consistency.markdown_report(stats, {"14_heldout_mfa_reset_gate": "vulnerable"}, {},
+                                             {"14_heldout_mfa_reset_gate"})
+    assert "Held out cases" in report and "not applicable" in report

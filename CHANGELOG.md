@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+Schema 0.6.0. Rubric 0.3.0. Implements `design/0.4.0-stride-coverage.md` and the additions the v0.3.x batches exposed on Claude and GPT-5.4. Rating behavior changes, so results are not directly comparable with 0.3.x without the held out cases.
+
+### Added
+- **STRIDE per element coverage.**
+  - `stride_coverage` records one entry for every element and every STRIDE category that applies to its kind, with status `finding`, `mitigated`, `not_applicable` (with a reason), or `not_assessed` (with what is missing).
+  - The validator requires complete coverage and checks every entry: findings must carry the category, mitigations must be real controls, and reasons need substance. It warns on behavioral mitigations for repudiation or denial of service, and on more than half the pairs marked not applicable.
+  - The reviewer report shows a coverage matrix.
+  - SKILL.md step 8b and `stride_agentic.md` define the minimum elements and applicability.
+- **Property findings** (`finding_kind: property`, `affected_refs`) for risks with no attack path, such as no attributable provenance or no spend, rate, or step limit. Rubric section 5a tiers them from the internal row of the base matrix, with the autonomy modifier, capped at `high`.
+- **Approval volume** (`controls[].approval_volume`). A low volume gate earns two tiers of credit; a high or unknown volume gate earns one. Only a raw action, low volume gate can bring residual below `moderate`.
+- **Sink constraint** (`controls[].constrains_sink`). Rubric step 3 credits a structural control only when it actually limits the path's sink. A sandbox with open egress earns nothing.
+- **Three held out eval cases** (14 to 16): a high volume raw action gate, a missing provenance risk, and calendar invite injection. They were written before 0.4.0 was built and never used to tune it.
+- **Report:** a separate held out section and the not applicable rate.
+
+### Changed
+- `severs_path` is set only after answering three questions: enforced outside the model, independent of model capability, and making the sink unreachable rather than harder to reach. Misuse appeared in every 0.3.x batch.
+- SKILL.md step 8: tag both the entry technique and the impact technique of an attack; and a design with no complete path today has no present path finding above `low`.
+- The worked example declares elements and a complete STRIDE coverage matrix.
+
 ## 0.3.5 (2026-10-12)
 
 Measured on Claude and GPT-5.4: validator clean 100% and 98%, recall 95% and 93%; GPT-5.4's vocabulary failures fell from 5 to 0 and its recorded missing controls doubled. See `evals/runs-claude-v035/` and `evals/runs-gpt-54-v035/`.

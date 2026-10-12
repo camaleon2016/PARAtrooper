@@ -32,21 +32,26 @@ This file is what the forecast rests on. For every control, ask two questions: *
 | Anomaly detection on agent actions | structural | partially_dependent | A stronger model can stay within the learned baseline. | model_upgrade, longer_task_horizon |
 | Memory write restrictions or provenance tags | structural | independent if enforced at the store; dependent if the model writes the tags | A stronger model learns to write believable provenance. | model_upgrade, data_scope_expansion |
 
-## Approval fatigue (open decision 4)
+## Approval fatigue
 
 A human approval gate is structurally independent of the model, but its effectiveness depends on **volume and framing**:
 - **Volume**: approval rates tend to rise when a reviewer sees many requests per hour and nearly all are benign. Record the expected approvals per reviewer per day in the finding's evidence where known.
 - **Framing**: if the approver sees a model generated summary rather than the raw action, the gate is `partially_dependent`. A more persuasive model lowers its effectiveness.
 
-Scoring (schema 0.3.0 and later):
+Scoring (schema 0.6.0 and later):
 - Record `approval_review_mode` on every approval gate: `raw_action` or `model_summary`. A gate without it is scored as `model_summary`.
+- Record `approval_volume`: `low` when the design says each request can be reviewed, `high` for dozens or more a day, `unknown` when not stated. Rubric section 5 step 2 gives low volume two tiers of credit and high or unknown volume one, and only a raw action, low volume gate can bring residual below `moderate`.
 - Classify raw action gates as `independent`. Classify summary gates as `partially_dependent`.
-- If the design implies high approval volume, list `autonomy_increase` and `longer_task_horizon` as triggers and name the gate in `failing_controls`. Put the volume assumption in `watch_signal`. Volume itself is not yet a schema field; it stays in evidence and `watch_signal`.
+- If the design implies high approval volume, list `autonomy_increase` and `longer_task_horizon` as triggers and name the gate in `failing_controls`, and put the volume in `watch_signal`.
 - A per call prompt that shows arguments only behind a collapsed link is `model_summary` in practice. Evals 10 and 11 are public incidents where this gate failed.
 
 Wiring and remembered approvals:
 - **Wire every gate.** A human approval control that gates a capability must be named in that capability's `approval_gate_ref`. Listing it only in `covers` earns step 3 credit instead of step 2, and runs that wire it differently will disagree on residual.
 - **A remembered approval is not a gate.** When approval is granted once and then remembered ("always allow," approve once per session or per tool), later calls are not reviewed at all. Record the control so reviewers see it, but do not set it as `approval_gate_ref`, leave its `covers` empty, and say in `decay_rationale` that later calls are unreviewed. It earns no credit.
+
+## Sandboxes and containment
+
+A structural containment control earns rubric step 3 credit only when it constrains the sink of the path it covers (`constrains_sink: true`). A container or sandbox that still allows unrestricted network egress, or that holds an organization wide credential, leaves the sink reachable and earns nothing. In the v0.3.2 batch a run credited exactly such a container, then rated residual higher anyway with a stated reason; the field makes that reasoning part of the classification instead.
 
 ## Missing controls
 

@@ -4,7 +4,7 @@ license: Apache-2.0
 compatibility: Runs on any agent platform that supports Agent Skills. Validation and reports need Python 3.10+ (jsonschema optional); without code execution, use references/validation_checklist.md.
 metadata:
   author: Jay White
-  version: "0.3.5"
+  version: "0.4.0"
   repository: https://github.com/camaleon2016/PARAtrooper
 description: Preemptive risk assessment for AI agents, MCP servers, and agent to agent designs. Use whenever the user shares a system prompt, tool list, MCP configuration, agent card, or agent architecture and wants risk rated, controls evaluated, security gaps found, or future risk predicted, even if they only ask "is this agent safe" or "review my agent."
 ---
@@ -70,20 +70,27 @@ Load `references/protocols.md`. Record each MCP, A2A, or API connection in `prot
 
 Load `references/control_decay.md`. For each control, set `mechanism`, `capability_dependence`, `decay_rationale`, and `maestro_layer`. When the classification is not clear, follow the classification rules at the end of that file.
 
-- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary`. If the approver sees arguments only behind a collapsed link, use `model_summary`.
-- Set `severs_path: true` only on a structural, independent, preventive control that makes the sink unreachable under any model behavior, and cite the evidence for that claim in the finding. A control that only narrows the path does not sever it.
+- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary` (if the approver sees arguments only behind a collapsed link, use `model_summary`), and set `approval_volume`: `low` only when the design says each request can be reviewed; `high` for dozens or more a day; `unknown` when the artifacts do not say.
+- Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
+- Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
 - Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result.
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
 ### 8. Find attack paths
 
-Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Then load `references/stride_agentic.md` and run STRIDE per element on the agent, its stores, and its connections. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`.
+Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`. **Tag both ends of an attack:** the technique an attacker uses to get in (for injected content, ASI01 and AML.T0051) and the technique that produces the harm (for example, ASI02 and AML.T0086 for exfiltration through a tool). When they differ, include both.
+
+If no untrusted source reaches a sensitive sink today, do not create a present path finding above `low`; risks that depend on planned changes are forecast findings (rubric section 5a).
+
+### 8b. STRIDE per element coverage
+
+Load `references/stride_agentic.md`. Make sure `elements` includes the minimum elements it lists. For each element, consider every STRIDE category that applies to its kind and record one `stride_coverage` entry per pair, with status `finding`, `mitigated`, `not_applicable`, or `not_assessed`, following that file. Missing properties, such as no attributable record of actions or no spend, rate, or step limit, are findings with `finding_kind: property`, not `not_applicable`. The validator rejects an assessment without complete coverage.
 
 ### 9. Compute tiers
 
 Load `references/rubric.md`. For each finding:
-1. Compute inherent (sections 4 and 3).
+1. Compute inherent (sections 4 and 3). For property findings, use section 5a.
 2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`.
 3. For **every** finding, choose the applicable triggers, remove the controls those triggers defeat, and recompute to get `forecast.projected_risk` (section 6). Set `watch_signal`. If no trigger changes the tier, record the triggers you considered with `projected_risk` equal to `residual_risk`; never leave the forecast out.
 4. Set `likelihood`, `consequence`, and `confidence` (sections 8 and 9).

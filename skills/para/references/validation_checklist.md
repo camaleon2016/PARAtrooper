@@ -25,6 +25,14 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 11. **Warning:** every approval gate (any control named by an `approval_gate_ref`) has an `approval_review_mode`. Without one it is scored as `model_summary`.
 12. **Warning:** if autonomy is A1 or A2, every capability with sink class S2 or S3 has an `approval_gate_ref`; otherwise score autonomy as A3.
 
+## Coverage (schema 0.6.0)
+
+- **Error:** `stride_coverage` is present, and every element has exactly one entry for each STRIDE category that applies to its kind (references/stride_agentic.md). Entries name declared elements and applicable categories only.
+- **Error:** a `finding` entry names findings that exist and list that category in their `stride`; a `mitigated` entry names declared or verified controls, never missing ones; `not_applicable` and `not_assessed` entries give a rationale of at least 30 characters.
+- **Warning:** a behavioral control cited as mitigating repudiation or denial of service; more than half the pairs marked `not_applicable`; a finding with `stride` labels that no coverage entry references; an input or egress capability that appears in no element's `refs`.
+- **Error:** a property finding (`finding_kind: property`) has `affected_refs` that are all defined, and no `attack_path`.
+- **Warning:** a property finding's inherent tier matches rubric section 5a (I row of the base matrix, autonomy modifier, capped at `high`).
+
 ## Findings
 
 13. **Error:** a present finding does not reference a planned element. **Warning:** a forecast finding that references a planned element names a trigger that adds it (`new_tool`, `new_mcp_server`, `new_peer_agent`, or `data_scope_expansion`).

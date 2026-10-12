@@ -79,20 +79,27 @@ Load `references/protocols.md`. Record each MCP, A2A, or API connection in `prot
 
 Load `references/control_decay.md`. For each control, set `mechanism`, `capability_dependence`, `decay_rationale`, and `maestro_layer`. When the classification is not clear, follow the classification rules at the end of that file.
 
-- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary`. If the approver sees arguments only behind a collapsed link, use `model_summary`.
-- Set `severs_path: true` only on a structural, independent, preventive control that makes the sink unreachable under any model behavior, and cite the evidence for that claim in the finding. A control that only narrows the path does not sever it.
+- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary` (if the approver sees arguments only behind a collapsed link, use `model_summary`), and set `approval_volume`: `low` only when the design says each request can be reviewed; `high` for dozens or more a day; `unknown` when the artifacts do not say.
+- Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
+- Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
 - Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result.
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
 ### 8. Find attack paths
 
-Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Then load `references/stride_agentic.md` and run STRIDE per element on the agent, its stores, and its connections. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`.
+Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`. **Tag both ends of an attack:** the technique an attacker uses to get in (for injected content, ASI01 and AML.T0051) and the technique that produces the harm (for example, ASI02 and AML.T0086 for exfiltration through a tool). When they differ, include both.
+
+If no untrusted source reaches a sensitive sink today, do not create a present path finding above `low`; risks that depend on planned changes are forecast findings (rubric section 5a).
+
+### 8b. STRIDE per element coverage
+
+Load `references/stride_agentic.md`. Make sure `elements` includes the minimum elements it lists. For each element, consider every STRIDE category that applies to its kind and record one `stride_coverage` entry per pair, with status `finding`, `mitigated`, `not_applicable`, or `not_assessed`, following that file. Missing properties, such as no attributable record of actions or no spend, rate, or step limit, are findings with `finding_kind: property`, not `not_applicable`. The validator rejects an assessment without complete coverage.
 
 ### 9. Compute tiers
 
 Load `references/rubric.md`. For each finding:
-1. Compute inherent (sections 4 and 3).
+1. Compute inherent (sections 4 and 3). For property findings, use section 5a.
 2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`.
 3. For **every** finding, choose the applicable triggers, remove the controls those triggers defeat, and recompute to get `forecast.projected_risk` (section 6). Set `watch_signal`. If no trigger changes the tier, record the triggers you considered with `projected_risk` equal to `residual_risk`; never leave the forecast out.
 4. Set `likelihood`, `consequence`, and `confidence` (sections 8 and 9).
@@ -156,21 +163,26 @@ This file is what the forecast rests on. For every control, ask two questions: *
 | Anomaly detection on agent actions | structural | partially_dependent | A stronger model can stay within the learned baseline. | model_upgrade, longer_task_horizon |
 | Memory write restrictions or provenance tags | structural | independent if enforced at the store; dependent if the model writes the tags | A stronger model learns to write believable provenance. | model_upgrade, data_scope_expansion |
 
-## Approval fatigue (open decision 4)
+## Approval fatigue
 
 A human approval gate is structurally independent of the model, but its effectiveness depends on **volume and framing**:
 - **Volume**: approval rates tend to rise when a reviewer sees many requests per hour and nearly all are benign. Record the expected approvals per reviewer per day in the finding's evidence where known.
 - **Framing**: if the approver sees a model generated summary rather than the raw action, the gate is `partially_dependent`. A more persuasive model lowers its effectiveness.
 
-Scoring (schema 0.3.0 and later):
+Scoring (schema 0.6.0 and later):
 - Record `approval_review_mode` on every approval gate: `raw_action` or `model_summary`. A gate without it is scored as `model_summary`.
+- Record `approval_volume`: `low` when the design says each request can be reviewed, `high` for dozens or more a day, `unknown` when not stated. Rubric section 5 step 2 gives low volume two tiers of credit and high or unknown volume one, and only a raw action, low volume gate can bring residual below `moderate`.
 - Classify raw action gates as `independent`. Classify summary gates as `partially_dependent`.
-- If the design implies high approval volume, list `autonomy_increase` and `longer_task_horizon` as triggers and name the gate in `failing_controls`. Put the volume assumption in `watch_signal`. Volume itself is not yet a schema field; it stays in evidence and `watch_signal`.
+- If the design implies high approval volume, list `autonomy_increase` and `longer_task_horizon` as triggers and name the gate in `failing_controls`, and put the volume in `watch_signal`.
 - A per call prompt that shows arguments only behind a collapsed link is `model_summary` in practice. Evals 10 and 11 are public incidents where this gate failed.
 
 Wiring and remembered approvals:
 - **Wire every gate.** A human approval control that gates a capability must be named in that capability's `approval_gate_ref`. Listing it only in `covers` earns step 3 credit instead of step 2, and runs that wire it differently will disagree on residual.
 - **A remembered approval is not a gate.** When approval is granted once and then remembered ("always allow," approve once per session or per tool), later calls are not reviewed at all. Record the control so reviewers see it, but do not set it as `approval_gate_ref`, leave its `covers` empty, and say in `decay_rationale` that later calls are unreviewed. It earns no credit.
+
+## Sandboxes and containment
+
+A structural containment control earns rubric step 3 credit only when it constrains the sink of the path it covers (`constrains_sink: true`). A container or sandbox that still allows unrestricted network egress, or that holds an organization wide credential, leaves the sink reachable and earns nothing. In the v0.3.2 batch a run credited exactly such a container, then rated residual higher anyway with a stated reason; the field makes that reasoning part of the classification instead.
 
 ## Missing controls
 
@@ -359,7 +371,7 @@ Load this file when the design includes MCP servers, A2A peers, or other agent c
 
 # PARA Rubric
 
-Rubric version: 0.2.2. Applies to schema 0.5.x.
+Rubric version: 0.3.0. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -439,15 +451,17 @@ Credits are applied in this order. A finding cannot drop below `low`. **Each con
 
 | Step | Control on the path | Credit |
 |---|---|---|
-| 1 | Structural, independent, preventive control that **severs** the path, recorded with `severs_path: true` and evidence. The sink cannot be reached from the source under any model behavior. Examples: an egress allowlist that excludes attacker controlled destinations, or a credential scoped so the sensitive data cannot be read. | Residual = `low`. Stop. |
-| 2 | Human approval gate on the sink (structural), referenced by the capability's `approval_gate_ref` | -2 tiers. The final residual cannot go below `moderate` unless the gate has `approval_review_mode: raw_action` (the approver sees the full destination and payload from the system of record). A gate with no `approval_review_mode` is scored as `model_summary`. |
-| 3 | Structural preventive or containment controls that are `independent` or `partially_dependent` and **narrow** without severing (rate limit, spend cap, partial credential scoping, sandbox with egress, or an independent control without a severing claim) | -1 tier total for this step, however many there are |
+| 1 | Structural, independent, preventive control that **severs** the path, recorded with `severs_path: true` and evidence. Set it only after answering yes to all three: is the control enforced outside the model; does it work regardless of model capability; and does it make the sink **unreachable** from the source, not merely harder to reach? Examples: an egress allowlist that excludes attacker controlled destinations, or a credential scoped so the sensitive data cannot be read. | Residual = `low`. Stop. |
+| 2 | Human approval gate on the sink (structural), referenced by the capability's `approval_gate_ref` | Credit depends on `approval_volume`: `low` earns -2 tiers; `high` or `unknown` earns -1. The final residual cannot go below `moderate` unless the gate has `approval_review_mode: raw_action` **and** `approval_volume: low`. A gate with no review mode is scored as `model_summary`; with no volume, as `unknown`. |
+| 3 | Structural preventive or containment controls that are `independent` or `partially_dependent`, **narrow** without severing, and **constrain the sink** of the path they cover (`constrains_sink: true`): a rate limit or spend cap on the sink, partial credential scoping, a recipient restriction. A sandbox that leaves the sink reachable (for example, unrestricted network egress) does not constrain it and earns nothing here. | -1 tier total for this step, however many there are |
 | 4 | Behavioral controls, and any control marked `dependent` | -1 tier total for this step, however many there are |
 | 5 | Detective and corrective controls | No tier credit. Record them. They reduce `consequence` by at most one step when detection happens before harm completes. |
 
 The credit caps in steps 3 and 4 are deliberate. Stacking five prompt instructions does not make an agent five times safer. Without the caps, teams could lower their rating by adding text.
 
 The `partially_dependent` structural controls (for example, a tool allowlist that can be chained around) are credited at step 3.
+
+Approval volume (step 2): use `low` only when the design says an approver sees few enough requests to review each one. Dozens or more a day, or approval granted once and remembered, is `high`. When the artifacts do not say, use `unknown`. The v0.3.x backtests showed why: the GitHub MCP incident's approval prompt failed under real approval volume, and both Claude and GPT-5.4 runs judged it weaker than the old two tier credit.
 
 The approval gate floor applies to the final residual, after steps 3 and 4. Stacking other controls on top of a summary gate cannot push the residual below `moderate`, because the approver is still deciding on the model's description of the action.
 
@@ -458,6 +472,20 @@ The approval gate floor applies to the final residual, after steps 3 and 4. Stac
 The v0.3.1 eval batch showed why this rule exists: every run kept residual at or above the floor, but some runs raised it by unstated judgment, so runs of the same design disagreed. Stating the reason makes the disagreement reviewable.
 
 **Worked example** (`examples/support_agent.assessment.json`): the untrusted email reaches CRM read and then email send. The sink is S3 (irreversible egress of confidential data). Inherent is `critical`. The only preventive control is a prompt rule (behavioral, dependent), so step 4 applies: -1 gives a residual of `high`. Outbound logging is detective, so it gets no tier credit.
+
+## 5a. Property findings
+
+Some risks have no attack path: a missing property such as attributable provenance, a spend or step limit, or a rate limit. Record them as findings with `finding_kind: property`, list the affected capabilities in `affected_refs`, and leave `attack_path` empty.
+
+1. **Sink class.** Take the highest sink class (section 2) among `affected_refs`.
+2. **Base tier.** Use the **I row** of the base matrix: S3 `high`, S2 `moderate`, S1 and S0 `low`. A missing property is exposed to internal error and misuse as readily as to an attacker.
+3. **Autonomy modifier.** Apply section 4's modifier.
+4. **Cap.** A property finding alone never exceeds `high`. `critical` is reserved for complete attack paths. When a missing property makes a path finding worse (for example, no provenance on the exfiltration path), record it on the path finding instead.
+5. **Residual.** Controls that restore the missing property earn credit at the step their mechanism qualifies for. Tamper evident action provenance is structural preventive for repudiation; a hard spend cap or step limit is structural preventive for denial of service. Prompt instructions never restore either.
+
+### Designs with no complete path today
+
+When no untrusted source reaches a sensitive sink today, there is no present path finding above `low`. Risks that depend on planned changes are `horizon: forecast` findings. Do not promote them to present findings to make them visible; the forecast rating carries them.
 
 ## 6. Forecast risk
 
@@ -542,6 +570,34 @@ Run STRIDE per element across the design. Map each part of the design to a data 
 | Memory, vector store, RAG index | data store | `inputs` with source memory or retrieval; `capabilities` with write to a store |
 | Protocol connection | data flow | `protocols[]` |
 | Trust domain change | trust boundary | `subject.trust_domain`, `protocols[].peer_trust_level`, `inputs[].trust_level` |
+
+## Recording coverage (`stride_coverage`)
+
+From schema 0.6.0, every assessment records STRIDE per element in `stride_coverage`, and the validator rejects an assessment without it.
+
+**Minimum elements.** Declare in `elements`:
+- the subject agent, as a `process` (its `element_id` can be the subject `agent_id`);
+- every input, as a `data_flow` (set `crosses_boundary` when its source is outside the trust domain), and the outside source as an `external_entity`;
+- every egress capability, as a `data_flow` that crosses the boundary;
+- every memory, vector store, log, audit record, quota, or configuration the design depends on, as a `data_store` (set `is_audit_record` on stores whose integrity makes actions attributable);
+- every protocol peer, as a `process` (inside the trust domain) or an `external_entity`.
+
+**Which categories apply.** The validator requires exactly these pairs:
+
+| Element kind | Categories |
+|---|---|
+| process | spoofing, tampering, repudiation, information_disclosure, denial_of_service, elevation_of_privilege |
+| external_entity | spoofing, repudiation |
+| data_store | tampering, information_disclosure, denial_of_service, and repudiation when `is_audit_record` |
+| data_flow | tampering, information_disclosure, denial_of_service, only when `crosses_boundary` is true |
+
+**One entry per pair, with one status:**
+- `finding`: the pair produces or confirms a finding. Name it in `finding_ids`, and add the category to that finding's `stride`.
+- `mitigated`: a declared or verified control addresses it. Name it in `control_ids`. Prompt instructions cannot mitigate repudiation or denial of service.
+- `not_applicable`: the category cannot apply to this element in this design. Give a specific reason tied to a design fact (at least 30 characters).
+- `not_assessed`: the artifacts do not say enough. Say what is missing. This is an honest gap, not a failure.
+
+**Missing properties are findings.** No attributable record of actions (repudiation) and no spend, rate, or step limit (denial of service) are findings with `finding_kind: property` (rubric section 5a), not `not_applicable`. If more than half the pairs end up `not_applicable`, look again; the validator warns at that point.
 
 ## Per element checklist
 
@@ -644,6 +700,14 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 11. **Warning:** every approval gate (any control named by an `approval_gate_ref`) has an `approval_review_mode`. Without one it is scored as `model_summary`.
 12. **Warning:** if autonomy is A1 or A2, every capability with sink class S2 or S3 has an `approval_gate_ref`; otherwise score autonomy as A3.
 
+## Coverage (schema 0.6.0)
+
+- **Error:** `stride_coverage` is present, and every element has exactly one entry for each STRIDE category that applies to its kind (references/stride_agentic.md). Entries name declared elements and applicable categories only.
+- **Error:** a `finding` entry names findings that exist and list that category in their `stride`; a `mitigated` entry names declared or verified controls, never missing ones; `not_applicable` and `not_assessed` entries give a rationale of at least 30 characters.
+- **Warning:** a behavioral control cited as mitigating repudiation or denial of service; more than half the pairs marked `not_applicable`; a finding with `stride` labels that no coverage entry references; an input or egress capability that appears in no element's `refs`.
+- **Error:** a property finding (`finding_kind: property`) has `affected_refs` that are all defined, and no `attack_path`.
+- **Warning:** a property finding's inherent tier matches rubric section 5a (I row of the base matrix, autonomy modifier, capped at `high`).
+
 ## Findings
 
 13. **Error:** a present finding does not reference a planned element. **Warning:** a forecast finding that references a planned element names a trigger that adds it (`new_tool`, `new_mcp_server`, `new_peer_agent`, or `data_scope_expansion`).
@@ -689,7 +753,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
     "schema_version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semantic version of this schema. Bump minor for additive fields, major for breaking changes. 0.2.0 added governance alignment. 0.3.0 added controls.approval_review_mode and controls.severs_path. 0.4.0 added elements and planned capabilities and inputs. 0.5.0 added findings.residual_rationale."
+      "description": "Semantic version of this schema. Bump minor for additive fields, major for breaking changes. 0.2.0 added governance alignment. 0.3.0 added controls.approval_review_mode and controls.severs_path. 0.4.0 added elements and planned capabilities and inputs. 0.5.0 added findings.residual_rationale. 0.6.0 added stride_coverage, findings.finding_kind and affected_refs, controls.approval_volume and constrains_sink."
     },
     "assessment": {
       "type": "object",
@@ -1239,6 +1303,18 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
           "severs_path": {
             "type": "boolean",
             "description": "Assessor's claim that this structural, independent, preventive control makes the sink unreachable from the covered sources under any model behavior (rubric section 5 step 1). Must be backed by evidence in the finding. Omit or false when the control only narrows the path."
+          },
+          "approval_volume": {
+            "enum": [
+              "low",
+              "high",
+              "unknown"
+            ],
+            "description": "For human approval gates only. low: an approver sees a handful of requests a day and can review each. high: dozens or more a day, or approval granted once and remembered. unknown: not stated. Rubric section 5 step 2: low volume earns two tiers, high or unknown earns one."
+          },
+          "constrains_sink": {
+            "type": "boolean",
+            "description": "True when this structural control actually limits the sink of the path it covers: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that leaves the sink reachable does not. Rubric section 5 step 3 credits only controls with constrains_sink true."
           }
         }
       }
@@ -1270,6 +1346,20 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
               "forecast"
             ],
             "description": "present = the path exists now. forecast = the path opens when a trigger occurs."
+          },
+          "finding_kind": {
+            "enum": [
+              "path",
+              "property"
+            ],
+            "description": "path (default): an attack path from a source to a sink. property: a missing property such as provenance, a spend cap, or a step limit, with no attack path; list the affected capabilities in affected_refs and leave attack_path empty. Rubric section 5a."
+          },
+          "affected_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Property findings only: the capabilities (and optionally elements) the missing property affects."
           },
           "attack_path": {
             "type": "array",
@@ -1521,6 +1611,13 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
         }
       }
     },
+    "stride_coverage": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stride_coverage_entry"
+      },
+      "description": "STRIDE per element: one entry for each element and each STRIDE category that applies to its kind (references/stride_agentic.md). Required by the validator from schema 0.6.0."
+    },
     "rating": {
       "type": "object",
       "required": [
@@ -1692,6 +1789,47 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
         "intended_purpose_change"
       ],
       "description": "Doubles as the documented significant change criteria for ISO 42001 8.2."
+    },
+    "stride_coverage_entry": {
+      "type": "object",
+      "required": [
+        "element_id",
+        "category",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "element_id": {
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/stride"
+        },
+        "status": {
+          "enum": [
+            "finding",
+            "mitigated",
+            "not_applicable",
+            "not_assessed"
+          ],
+          "description": "finding: produces or confirms a finding (name it in finding_ids). mitigated: a named control addresses it (control_ids). not_applicable: the category cannot apply to this element in this design (rationale). not_assessed: the artifacts do not say enough (rationale says what is missing)."
+        },
+        "finding_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "control_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rationale": {
+          "type": "string"
+        }
+      }
     }
   }
 }

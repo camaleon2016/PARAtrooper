@@ -62,8 +62,41 @@ def sink_class(cap: dict, carried_sensitivity: int) -> int:
     return 0
 
 
+def finding_refs(finding: dict) -> list[str]:
+    """The ids a finding is about: its attack path, or for a property finding its affected_refs."""
+    if finding.get("finding_kind") == "property":
+        return list(finding.get("affected_refs", []))
+    return [s["ref"] for s in finding.get("attack_path", [])]
+
+
+def autonomy_shift(tier: str, sink: int, autonomy: dict) -> str:
+    """Rubric section 4 autonomy modifier."""
+    steps = autonomy.get("max_unattended_steps")
+    unbounded = (steps is None or steps > AUTONOMY_MODIFIER_STEP_LIMIT) and autonomy.get("max_runtime_minutes") is None
+    if sink >= 2 and (
+        autonomy.get("level") == "A4_fully_autonomous"
+        or autonomy.get("can_spawn_agents")
+        or autonomy.get("can_modify_own_config")
+        or unbounded
+    ):
+        return shift(tier, 1)
+    return tier
+
+
 def expected_inherent(finding: dict, inputs: dict, caps: dict, autonomy: dict) -> str | None:
-    """Recompute inherent tier from the attack path per rubric sections 2 to 4. None if not computable."""
+    """Recompute inherent tier per rubric sections 2 to 4, or section 5a for property findings.
+    None if not computable."""
+    if autonomy.get("level") == "A0_suggest_only":
+        return "low"
+    if finding.get("finding_kind") == "property":
+        # Section 5a: a missing property is exposed to internal error and misuse as readily as to an
+        # attacker, so it uses the I row; alone it never reaches critical.
+        affected = [caps[r] for r in finding.get("affected_refs", []) if r in caps]
+        if not affected:
+            return None
+        sink = max(sink_class(c, 0) for c in affected)
+        tier = autonomy_shift(BASE_MATRIX["I"][sink], sink, autonomy)
+        return tier if RANK[tier] <= RANK["high"] else "high"
     refs = [s["ref"] for s in finding.get("attack_path", [])]
     srcs = [inputs[r] for r in refs if r in inputs]
     path_caps = [caps[r] for r in refs if r in caps]
@@ -75,20 +108,7 @@ def expected_inherent(finding: dict, inputs: dict, caps: dict, autonomy: dict) -
         sink = max(sink, sink_class(cap, carried))
         if cap.get("action") == "read":
             carried = max(carried, SENSITIVITY_RANK[cap["data_sensitivity"]])
-    tier = BASE_MATRIX[src][sink]
-    level = autonomy.get("level")
-    if level == "A0_suggest_only":
-        return "low"
-    steps = autonomy.get("max_unattended_steps")
-    unbounded = (steps is None or steps > AUTONOMY_MODIFIER_STEP_LIMIT) and autonomy.get("max_runtime_minutes") is None
-    if sink >= 2 and (
-        level == "A4_fully_autonomous"
-        or autonomy.get("can_spawn_agents")
-        or autonomy.get("can_modify_own_config")
-        or unbounded
-    ):
-        tier = shift(tier, 1)
-    return tier
+    return autonomy_shift(BASE_MATRIX[src][sink], sink, autonomy)
 
 
 def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
@@ -96,12 +116,14 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
 
     Each control earns credit at exactly one step:
       step 1: structural, independent, preventive, severs_path true -> residual low
-      step 2: human approval gate on a path capability -> -2, floor moderate unless raw_action review
-      step 3: other structural preventive or containment controls that are not dependent -> -1 total
+      step 2: human approval gate on a path capability. Low approval volume: -2. High or unknown
+              volume: -1. Floor moderate unless the gate shows the raw action and volume is low.
+      step 3: other structural preventive or containment controls that are not dependent and that
+              constrain the path's sink (constrains_sink true) -> -1 total
       step 4: behavioral or dependent preventive or containment controls -> -1 total
       step 5: detective and corrective controls -> no tier credit
     """
-    refs = {s["ref"] for s in finding.get("attack_path", [])}
+    refs = set(finding_refs(finding))
     gate_ids = {caps[r].get("approval_gate_ref") for r in refs if r in caps} - {None}
     on_path = [
         c for c in controls.values()
@@ -119,10 +141,12 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
 
     credit, floor = 0, "low"
     if gates:
-        credit += 2
-        if not any(g.get("approval_review_mode") == "raw_action" for g in gates):
+        low_volume = any(g.get("approval_volume") == "low" for g in gates)
+        credit += 2 if low_volume else 1
+        if not any(g.get("approval_review_mode") == "raw_action" and g.get("approval_volume") == "low" for g in gates):
             floor = "moderate"
-    if any(c["mechanism"] == "structural" and c["capability_dependence"] != "dependent" for c in others):
+    if any(c["mechanism"] == "structural" and c["capability_dependence"] != "dependent" and c.get("constrains_sink")
+           for c in others):
         credit += 1
     if any(c["mechanism"] == "behavioral" or c["capability_dependence"] == "dependent" for c in others):
         credit += 1
@@ -130,6 +154,89 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
     inherent = finding["inherent_risk"]
     floor = floor if RANK[floor] <= RANK[inherent] else inherent
     return tier_max([shift(inherent, -credit), floor])
+
+
+# STRIDE per element (stride_agentic.md). Data flows need coverage only when they cross a boundary;
+# a data store needs repudiation only when it is an audit record.
+APPLICABLE = {
+    "process": ["spoofing", "tampering", "repudiation", "information_disclosure", "denial_of_service",
+                "elevation_of_privilege"],
+    "external_entity": ["spoofing", "repudiation"],
+    "data_store": ["tampering", "information_disclosure", "denial_of_service"],
+    "data_flow": ["tampering", "information_disclosure", "denial_of_service"],
+}
+NA_RATE_WARNING = 0.5
+RATIONALE_MIN = 30
+
+
+def applicable_categories(element: dict) -> list[str]:
+    kind = element.get("kind")
+    if kind == "data_flow" and not element.get("crosses_boundary"):
+        return []
+    cats = list(APPLICABLE.get(kind, []))
+    if kind == "data_store" and element.get("is_audit_record"):
+        cats.append("repudiation")
+    return cats
+
+
+def check_stride_coverage(doc: dict, elements: dict, controls: dict, findings: dict,  # pylint: disable=too-many-branches
+                          errors: list[str], warnings: list[str]) -> None:
+    """Design section 7 of 0.4.0: completeness and honesty of the STRIDE per element matrix."""
+    coverage = doc.get("stride_coverage")
+    if coverage is None:
+        errors.append("stride_coverage: missing; every assessment needs STRIDE per element coverage (SKILL.md step 8b)")
+        return
+    if not elements:
+        errors.append("stride_coverage: no elements declared; declare elements before covering them (SKILL.md step 3a)")
+        return
+    seen: dict[tuple[str, str], dict] = {}
+    for entry in coverage:
+        key = (entry["element_id"], entry["category"])
+        where = f"stride_coverage/{entry['element_id']}/{entry['category']}"
+        el = elements.get(entry["element_id"])
+        if el is None:
+            errors.append(f"{where}: element not declared")
+            continue
+        if entry["category"] not in applicable_categories(el):
+            errors.append(f"{where}: category does not apply to a {el.get('kind')} element")
+            continue
+        if key in seen:
+            errors.append(f"{where}: duplicate entry")
+        seen[key] = entry
+        status = entry["status"]
+        if status == "finding":
+            if not entry.get("finding_ids"):
+                errors.append(f"{where}: status finding needs finding_ids")
+            for fid in entry.get("finding_ids", []):
+                if fid not in findings:
+                    errors.append(f"{where}: finding '{fid}' not defined")
+                elif entry["category"] not in findings[fid].get("stride", []):
+                    errors.append(f"{where}: finding '{fid}' does not list '{entry['category']}' in its stride")
+        elif status == "mitigated":
+            if not entry.get("control_ids"):
+                errors.append(f"{where}: status mitigated needs control_ids")
+            for cid in entry.get("control_ids", []):
+                ctl = controls.get(cid)
+                if ctl is None:
+                    errors.append(f"{where}: control '{cid}' not defined")
+                elif ctl["status"] == "missing_recommended":
+                    errors.append(f"{where}: a missing control cannot mitigate; use status finding or not_assessed")
+                elif entry["category"] in {"repudiation", "denial_of_service"} and ctl["mechanism"] == "behavioral":
+                    warnings.append(f"{where}: behavioral control '{cid}' cannot restore provenance or limits; "
+                                    "see rubric section 5a")
+        elif len(entry.get("rationale", "").strip()) < RATIONALE_MIN:
+            errors.append(f"{where}: {status} needs a rationale of at least {RATIONALE_MIN} characters")
+    required = [(eid, cat) for eid, el in elements.items() for cat in applicable_categories(el)]
+    missing = [k for k in required if k not in seen]
+    for eid, cat in missing:
+        errors.append(f"stride_coverage/{eid}/{cat}: no entry for an applicable category")
+    na = sum(1 for k in required if seen.get(k, {}).get("status") == "not_applicable")
+    if required and na / len(required) > NA_RATE_WARNING:
+        warnings.append(f"stride_coverage: {na} of {len(required)} pairs marked not_applicable; check for checkbox coverage")
+    labelled = {fid for fid, f in findings.items() if f.get("stride")}
+    referenced = {fid for e in coverage for fid in e.get("finding_ids", [])}
+    for fid in sorted(labelled - referenced):
+        warnings.append(f"findings/{fid}: has stride labels but no stride_coverage entry references it")
 
 
 # Values models commonly reach for in the wrong field, with where they belong. Seen in the GPT-5.4 batch:
@@ -254,6 +361,14 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
 
     for f in findings:
         fid = f"findings/{f['finding_id']}"
+        if f.get("finding_kind") == "property":
+            if f.get("attack_path"):
+                errors.append(f"{fid}: a property finding has no attack_path; list affected capabilities in affected_refs")
+            if not f.get("affected_refs"):
+                errors.append(f"{fid}: a property finding needs affected_refs (rubric section 5a)")
+            for ref in f.get("affected_refs", []):
+                if ref not in known_refs:
+                    errors.append(f"{fid}: affected_refs entry '{ref}' not defined in document")
         for step in f.get("attack_path", []):
             if step["ref"] not in known_refs:
                 errors.append(f"{fid}: attack_path ref '{step['ref']}' not defined in document")
@@ -308,7 +423,7 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
         # name. In the GPT-5.4 batch, runs recorded far fewer missing controls than they recommended.
         structural_recs = [r for r in f.get("recommendations", [])
                            if r.get("mechanism") == "structural" and r.get("category") in {"preventive", "containment"}]
-        path_refs = {s["ref"] for s in f.get("attack_path", [])} | set(f.get("toxic_combination", []))
+        path_refs = set(finding_refs(f)) | set(f.get("toxic_combination", []))
         missing_on_path = [c for c in controls.values()
                            if c["status"] == "missing_recommended" and path_refs & set(c.get("covers", []))]
         if structural_recs and path_refs and not missing_on_path:
@@ -328,6 +443,11 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
     for key, val in want.items():
         if doc["rating"][key] != val:
             errors.append(f"rating.{key} is '{doc['rating'][key]}' but rollup of findings gives '{val}' (rubric section 7)")
+
+    check_stride_coverage(doc, elements, controls, {f["finding_id"]: f for f in findings}, errors, warnings)
+    for item in list(inputs) + [c for c, cap in caps.items() if cap.get("is_egress")]:
+        if elements and not any(item in el.get("refs", []) for el in elements.values()):
+            warnings.append(f"elements: {item} appears in no element's refs (stride_agentic.md, minimum elements)")
 
     if not any("runtime" in lim.lower() for lim in doc["limitations"]):
         errors.append("limitations: must state that the assessment reflects design, not observed runtime behavior")

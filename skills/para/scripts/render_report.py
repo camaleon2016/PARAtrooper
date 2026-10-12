@@ -138,7 +138,37 @@ def reviewer_view(doc: dict) -> list[str]:
                 out += ["", f"Treatment: {t['option']}" + (f", owner {md_escape(t['owner'])}" if t.get("owner") else "")
                         + (f", approved by {md_escape(t['approved_by'])}" if t.get("approved_by") else "")]
             out.append("")
+    out += coverage_matrix(doc)
     out += ["### Limitations", ""] + [f"- {md_escape(l)}" for l in doc["limitations"]] + [""]
+    return out
+
+
+STRIDE_ORDER = ["spoofing", "tampering", "repudiation", "information_disclosure", "denial_of_service",
+                "elevation_of_privilege"]
+STRIDE_SHORT = {"spoofing": "S", "tampering": "T", "repudiation": "R", "information_disclosure": "I",
+                "denial_of_service": "D", "elevation_of_privilege": "E"}
+STATUS_MARK = {"finding": "finding", "mitigated": "mitigated", "not_applicable": "n/a", "not_assessed": "GAP"}
+
+
+def coverage_matrix(doc: dict) -> list[str]:
+    """STRIDE per element at a glance: one row per element, one column per category. Blank cells do
+    not apply to that element kind; GAP marks pairs the artifacts did not let the assessor judge."""
+    coverage = doc.get("stride_coverage")
+    if not coverage:
+        return []
+    cells: dict[tuple[str, str], str] = {}
+    for e in coverage:
+        ids = e.get("finding_ids") or e.get("control_ids") or []
+        mark = STATUS_MARK.get(e["status"], e["status"])
+        cells[(e["element_id"], e["category"])] = f"{mark} {', '.join(md_code(i) for i in ids)}".strip()
+    out = ["### STRIDE coverage", "", "| Element | Kind | " + " | ".join(STRIDE_SHORT[c] for c in STRIDE_ORDER) + " |",
+           "|---|---|" + "---|" * len(STRIDE_ORDER)]
+    for el in doc.get("elements", []):
+        row = [cells.get((el["element_id"], c), "") for c in STRIDE_ORDER]
+        out.append(f"| {md_code(el['element_id'])} | {md_escape(el.get('kind', ''))} | " + " | ".join(row) + " |")
+    na = sum(1 for e in coverage if e["status"] == "not_applicable")
+    gaps = sum(1 for e in coverage if e["status"] == "not_assessed")
+    out += ["", f"{len(coverage)} pairs covered; {gaps} not assessed; {na} not applicable.", ""]
     return out
 
 
