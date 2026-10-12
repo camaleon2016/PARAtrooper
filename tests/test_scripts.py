@@ -114,12 +114,12 @@ def test_rubric_inherent_mismatch_warns():
     assert has(warnings, "rubric computes inherent 'critical'")
 
 
-def test_residual_below_control_floor_warns():
+def test_residual_below_control_floor_is_an_error():
     doc = example()
     doc["findings"][0]["residual_risk"] = "low"
     doc["rating"]["residual"] = "low"
-    _, warnings = run(doc)
-    assert has(warnings, "below what path controls can justify ('high')")
+    errors, _ = run(doc)
+    assert has(errors, "below what path controls can justify ('high')")
 
 
 def recipient_binding(**extra):
@@ -145,16 +145,16 @@ def with_low_residual(doc):
 def test_severing_control_allows_low_residual():
     doc = with_low_residual(example())
     doc["controls"].append(recipient_binding(severs_path=True))
-    _, warnings = run(doc)
-    assert not has(warnings, "below what path controls can justify")
+    errors, warnings = run(doc)
+    assert not has(errors + warnings, "below what path controls can justify")
 
 
 def test_independent_control_without_severs_path_only_narrows():
     # Rubric step 1 needs an explicit severing claim. Without it the control earns step 3 credit only.
     doc = with_low_residual(example())
     doc["controls"].append(recipient_binding(constrains_sink=True))
-    _, warnings = run(doc)
-    assert has(warnings, "below what path controls can justify ('moderate')")
+    errors, _ = run(doc)
+    assert has(errors, "below what path controls can justify ('moderate')")
 
 
 def test_structural_dependent_control_is_not_double_credited():
@@ -211,9 +211,9 @@ def test_gate_without_review_mode_warns_and_scores_as_summary():
     doc = gated_example()
     doc["findings"][0]["residual_risk"] = "moderate"
     doc["rating"]["residual"] = "moderate"
-    _, warnings = run(doc)
+    errors, warnings = run(doc)
     assert has(warnings, "no approval_review_mode")
-    assert not has(warnings, "below what path controls can justify")
+    assert not has(errors + warnings, "below what path controls can justify")
 
 
 def test_declared_a2_without_gate_warns():
@@ -503,9 +503,10 @@ def test_element_may_link_to_peer_with_same_id():
     doc["elements"].append({"element_id": "mail_mcp", "kind": "process", "refs": ["mail_mcp"]})
     errors, _ = run(doc)
     assert not has(errors, "refs unknown id")
+    # A self reference is redundant, not wrong (cases 12, 13, and 15 give stores their own stable ids).
     doc["elements"].append({"element_id": "store.loop", "kind": "data_store", "refs": ["store.loop"]})
     errors, _ = run(doc)
-    assert has(errors, "elements/store.loop: refs unknown id 'store.loop'")
+    assert not has(errors, "refs unknown id")
 
 
 def test_residual_above_floor_needs_rationale():
@@ -804,3 +805,35 @@ def test_report_shows_coverage_matrix_and_heldout_section():
     report = run_consistency.markdown_report(stats, {"14_heldout_mfa_reset_gate": "vulnerable"}, {},
                                              {"14_heldout_mfa_reset_gate"})
     assert "Held out cases" in report and "not applicable" in report
+
+
+def test_coverage_beyond_the_required_set_is_allowed():
+    # v0.4.0 GPT-5.4 batch: runs covered internal flows and log stores. Extra coverage is not an error.
+    doc = example()
+    doc["elements"].append({"element_id": "flow.internal", "kind": "data_flow", "refs": ["cap.crm_read"]})
+    doc["elements"].append({"element_id": "store.logs", "kind": "data_store", "refs": ["cap.email_send"]})
+    for el, cat in [("store.logs", "tampering"), ("store.logs", "information_disclosure"),
+                    ("store.logs", "denial_of_service"), ("store.logs", "repudiation"),
+                    ("flow.internal", "tampering")]:
+        doc["stride_coverage"].append({"element_id": el, "category": cat, "status": "not_assessed",
+                                       "rationale": "Retention and access rules for this are not described."})
+    errors, _ = run(doc)
+    assert not has(errors, "does not apply")
+
+
+def test_coverage_finding_category_missing_from_finding_is_a_warning_and_still_scores():
+    doc = example()
+    doc["findings"][0]["stride"] = [s for s in doc["findings"][0]["stride"] if s != "tampering"]
+    errors, warnings = run(doc)
+    assert not has(errors, "does not list") and has(warnings, "does not list 'tampering'")
+    exp = {"kind": "coverage", "rating": {"inherent": ["critical"], "residual": ["high"], "forecast": ["critical"]},
+           "required_stride_categories": ["tampering"]}
+    assert run_consistency.score_run(doc, exp, SCHEMA)["recall"] == 1.0
+
+
+def test_older_schema_documents_are_not_held_to_coverage():
+    doc = example()
+    del doc["stride_coverage"]
+    doc["schema_version"] = "0.5.0"
+    errors, _ = run(doc)
+    assert not has(errors, "stride_coverage")

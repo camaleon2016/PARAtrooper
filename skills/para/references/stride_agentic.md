@@ -21,7 +21,7 @@ From schema 0.6.0, every assessment records STRIDE per element in `stride_covera
 - every memory, vector store, log, audit record, quota, or configuration the design depends on, as a `data_store` (set `is_audit_record` on stores whose integrity makes actions attributable);
 - every protocol peer, as a `process` (inside the trust domain) or an `external_entity`.
 
-**Which categories apply.** The validator requires exactly these pairs:
+**Which categories apply.** The validator requires these pairs. You may cover more (for example, an internal flow, or repudiation on a log store you did not mark as an audit record), as long as the category is one the element kind can carry:
 
 | Element kind | Categories |
 |---|---|

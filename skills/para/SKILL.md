@@ -70,7 +70,7 @@ Load `references/protocols.md`. Record each MCP, A2A, or API connection in `prot
 
 Load `references/control_decay.md`. For each control, set `mechanism`, `capability_dependence`, `decay_rationale`, and `maestro_layer`. When the classification is not clear, follow the classification rules at the end of that file.
 
-- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary` (if the approver sees arguments only behind a collapsed link, use `model_summary`), and set `approval_volume`: `low` only when the design says each request can be reviewed; `high` for dozens or more a day; `unknown` when the artifacts do not say.
+- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary` (if the approver sees arguments only behind a collapsed link, use `model_summary`), and set `approval_volume`: `low` only when the design says each approver sees fewer than about 20 requests a day, or says each request is reviewed individually; `high` for more than that, or when approval is granted once and remembered; `unknown` when the artifacts do not say. A stated figure such as 150 approvals a day is `high`.
 - Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
 - Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
@@ -83,9 +83,11 @@ Load `references/toxic_combinations.md` and follow its search procedure. `toxic_
 
 If no untrusted source reaches a sensitive sink today, do not create a present path finding above `low`; risks that depend on planned changes are forecast findings (rubric section 5a).
 
+When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it.
+
 ### 8b. STRIDE per element coverage
 
-Load `references/stride_agentic.md`. Make sure `elements` includes the minimum elements it lists. For each element, consider every STRIDE category that applies to its kind and record one `stride_coverage` entry per pair, with status `finding`, `mitigated`, `not_applicable`, or `not_assessed`, following that file. Missing properties, such as no attributable record of actions or no spend, rate, or step limit, are findings with `finding_kind: property`, not `not_applicable`. The validator rejects an assessment without complete coverage.
+Load `references/stride_agentic.md`. Make sure `elements` includes the minimum elements it lists. For each element, consider every STRIDE category that applies to its kind and record one `stride_coverage` entry per pair, with status `finding`, `mitigated`, `not_applicable`, or `not_assessed`, following that file. **When an entry is `finding`, add that category to the named finding's `stride` list.** Covering pairs beyond the required set is fine. Missing properties, such as no attributable record of actions or no spend, rate, or step limit, are findings with `finding_kind: property`, not `not_applicable`. The validator rejects an assessment without complete coverage.
 
 ### 9. Compute tiers
 

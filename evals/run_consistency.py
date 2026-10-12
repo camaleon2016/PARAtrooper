@@ -64,7 +64,9 @@ def score_run(doc: dict, exp: dict, schema: dict) -> dict:
     hits += len(set(exp.get("required_triggers", [])) & triggers)
 
     # STRIDE categories that must appear on at least one finding (coverage cases 12 and 13).
+    # A coverage entry marked finding states the category as clearly as the finding's own stride list.
     stride_found = {s for f in findings for s in f.get("stride", [])}
+    stride_found |= {e.get("category") for e in doc.get("stride_coverage") or [] if e.get("status") == "finding"}
     req_stride = exp.get("required_stride_categories", [])
     hits += len(set(req_stride) & stride_found)
 

@@ -90,11 +90,11 @@ The credit caps in steps 3 and 4 are deliberate. Stacking five prompt instructio
 
 The `partially_dependent` structural controls (for example, a tool allowlist that can be chained around) are credited at step 3.
 
-Approval volume (step 2): use `low` only when the design says an approver sees few enough requests to review each one. Dozens or more a day, or approval granted once and remembered, is `high`. When the artifacts do not say, use `unknown`. The v0.3.x backtests showed why: the GitHub MCP incident's approval prompt failed under real approval volume, and both Claude and GPT-5.4 runs judged it weaker than the old two tier credit.
+Approval volume (step 2): use `low` only when the design says each approver sees fewer than about 20 requests a day, or says each request is reviewed individually; `high` for more than that, or when approval is granted once and remembered; `unknown` when the artifacts do not say. The v0.3.x backtests showed why: the GitHub MCP incident's approval prompt failed under real approval volume, and both Claude and GPT-5.4 runs judged it weaker than the old two tier credit.
 
 The approval gate floor applies to the final residual, after steps 3 and 4. Stacking other controls on top of a summary gate cannot push the residual below `moderate`, because the approver is still deciding on the model's description of the action.
 
-**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`. Never rate residual below the floor.
+**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`. Never rate residual below the floor; the validator rejects it.
 
 `scripts/validate.py` computes the floor from the controls on the path. It warns when a document claims less, and when a document claims more without a `residual_rationale`.
 
@@ -105,6 +105,8 @@ The v0.3.1 eval batch showed why this rule exists: every run kept residual at or
 ## 5a. Property findings
 
 Some risks have no attack path: a missing property such as attributable provenance, a spend or step limit, or a rate limit. Record them as findings with `finding_kind: property`, list the affected capabilities in `affected_refs`, and leave `attack_path` empty.
+
+**Precedence.** When every source that could trigger the harm is trusted or internal, and the harm comes from a missing limit or a missing record, use a property finding, not a path finding from the internal source. A path finding from an internal source plus the autonomy modifier would rate it `critical`, which section 5a reserves for complete attack paths from untrusted sources.
 
 1. **Sink class.** Take the highest sink class (section 2) among `affected_refs`.
 2. **Base tier.** Use the **I row** of the base matrix: S3 `high`, S2 `moderate`, S1 and S0 `low`. A missing property is exposed to internal error and misuse as readily as to an attacker.

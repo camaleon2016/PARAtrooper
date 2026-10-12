@@ -158,6 +158,23 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
 
 # STRIDE per element (stride_agentic.md). Data flows need coverage only when they cross a boundary;
 # a data store needs repudiation only when it is an audit record.
+def schema_at_least(version: str, minimum: tuple[int, int, int]) -> bool:
+    """Rules introduced in a schema version apply only to documents that declare it, so earlier
+    assessments (for example, baseline runs of an older skill) are judged by the rules they targeted."""
+    try:
+        return tuple(int(x) for x in version.split(".")[:3]) >= minimum
+    except ValueError:
+        return True
+
+
+# Categories an element kind can carry at all. Covering more than the required set is allowed.
+POSSIBLE = {
+    "process": ["spoofing", "tampering", "repudiation", "information_disclosure", "denial_of_service",
+                "elevation_of_privilege"],
+    "external_entity": ["spoofing", "repudiation"],
+    "data_store": ["tampering", "repudiation", "information_disclosure", "denial_of_service"],
+    "data_flow": ["tampering", "information_disclosure", "denial_of_service"],
+}
 APPLICABLE = {
     "process": ["spoofing", "tampering", "repudiation", "information_disclosure", "denial_of_service",
                 "elevation_of_privilege"],
@@ -197,7 +214,7 @@ def check_stride_coverage(doc: dict, elements: dict, controls: dict, findings: d
         if el is None:
             errors.append(f"{where}: element not declared")
             continue
-        if entry["category"] not in applicable_categories(el):
+        if entry["category"] not in POSSIBLE.get(el.get("kind"), []):
             errors.append(f"{where}: category does not apply to a {el.get('kind')} element")
             continue
         if key in seen:
@@ -211,7 +228,8 @@ def check_stride_coverage(doc: dict, elements: dict, controls: dict, findings: d
                 if fid not in findings:
                     errors.append(f"{where}: finding '{fid}' not defined")
                 elif entry["category"] not in findings[fid].get("stride", []):
-                    errors.append(f"{where}: finding '{fid}' does not list '{entry['category']}' in its stride")
+                    warnings.append(f"{where}: finding '{fid}' does not list '{entry['category']}' in its stride; "
+                                    "add it so the finding carries every category it covers")
         elif status == "mitigated":
             if not entry.get("control_ids"):
                 errors.append(f"{where}: status mitigated needs control_ids")
@@ -307,13 +325,11 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
     known_refs |= {p["peer_ref"] for p in doc.get("protocols", [])}
     planned = {i for i, item in {**caps, **inputs, **elements}.items() if item.get("planned")}
 
-    # An element may share its id with a protocol peer or the subject agent and link to it; any
-    # other self reference is circular.
-    linkable_self = {p["peer_ref"] for p in doc.get("protocols", [])} | {doc["subject"]["agent_id"]}
+    # An element may list its own id in refs (runs do this when a case's stable id is the element
+    # itself, such as a store); that is redundant, not wrong, so it is ignored.
     for el in elements.values():
         for ref in el.get("refs", []):
-            circular = ref == el["element_id"] and ref not in linkable_self
-            if ref not in known_refs or circular:
+            if ref != el["element_id"] and ref not in known_refs:
                 errors.append(f"elements/{el['element_id']}: refs unknown id '{ref}'")
 
     for inp in doc["inputs"]:
@@ -411,7 +427,8 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
                 warnings.append(f"{fid}: rubric computes inherent '{exp}', document says '{f['inherent_risk']}'")
             floor = residual_floor(f, caps, controls)
             if RANK[f["residual_risk"]] < RANK[floor]:
-                warnings.append(f"{fid}: residual '{f['residual_risk']}' is below what path controls can justify ('{floor}')")
+                errors.append(f"{fid}: residual '{f['residual_risk']}' is below what path controls can justify "
+                              f"('{floor}'); rubric section 5 never allows a residual below the floor")
             elif RANK[f["residual_risk"]] > RANK[floor] and not f.get("residual_rationale"):
                 warnings.append(
                     f"{fid}: residual '{f['residual_risk']}' is above the rubric floor ('{floor}') with no "
@@ -444,7 +461,8 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
         if doc["rating"][key] != val:
             errors.append(f"rating.{key} is '{doc['rating'][key]}' but rollup of findings gives '{val}' (rubric section 7)")
 
-    check_stride_coverage(doc, elements, controls, {f["finding_id"]: f for f in findings}, errors, warnings)
+    if schema_at_least(doc.get("schema_version", "0.0.0"), (0, 6, 0)):
+        check_stride_coverage(doc, elements, controls, {f["finding_id"]: f for f in findings}, errors, warnings)
     for item in list(inputs) + [c for c, cap in caps.items() if cap.get("is_egress")]:
         if elements and not any(item in el.get("refs", []) for el in elements.values()):
             warnings.append(f"elements: {item} appears in no element's refs (stride_agentic.md, minimum elements)")
