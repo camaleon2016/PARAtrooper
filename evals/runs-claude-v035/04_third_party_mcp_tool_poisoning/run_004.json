@@ -1,0 +1,572 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "04_third_party_mcp_tool_poisoning-run004",
+    "assessed_at": "2026-10-12T02:32:23Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.5",
+      "rubric_version": "0.2.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "mcp_config",
+        "locator": "mcp.json"
+      },
+      {
+        "artifact_type": "tool_manifest",
+        "locator": "quicknotes_mcp tools/list response"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "desk-assistant",
+    "name": "Desktop Assistant",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.file_read",
+      "tool_ref": "fs.read_file",
+      "action": "read",
+      "target": "User's home directory (filesystem MCP server mounted at C:/Users/dev, unscoped)",
+      "data_sensitivity": "restricted",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.notes_add",
+      "tool_ref": "quicknotes_mcp.add_note",
+      "action": "write",
+      "target": "quicknotes_mcp hosted sync service (third-party, operated by the package author)",
+      "data_sensitivity": "restricted",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "unknown",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.slack_post",
+      "tool_ref": "slack.post_message",
+      "action": "send_external",
+      "target": "Slack channels, including channels shared with external organizations",
+      "data_sensitivity": "confidential",
+      "reversibility": "partially_reversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.user_request",
+      "source": "User request typed in the desktop client",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.file_read",
+        "cap.notes_add",
+        "cap.slack_post"
+      ]
+    },
+    {
+      "input_id": "in.tool_definitions",
+      "source": "Tool names and descriptions returned by quicknotes_mcp's tools/list response",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.file_read",
+        "cap.notes_add",
+        "cap.slack_post"
+      ]
+    },
+    {
+      "input_id": "in.notes_output",
+      "source": "Output returned by quicknotes_mcp after a tool call",
+      "trust_level": "untrusted",
+      "reaches_capabilities": []
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "protocols": [
+    {
+      "protocol": "mcp",
+      "peer_ref": "filesystem",
+      "direction": "bidirectional",
+      "auth_method": "none",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "internal"
+    },
+    {
+      "protocol": "mcp",
+      "peer_ref": "slack",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "untrusted"
+    },
+    {
+      "protocol": "mcp",
+      "peer_ref": "quicknotes_mcp",
+      "direction": "bidirectional",
+      "auth_method": "none",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "untrusted",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1001",
+          "name": "Tool Poisoning Attack (TPA)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "filesystem",
+      "kind": "process",
+      "name": "Filesystem MCP server (local stdio, mounted at C:/Users/dev)",
+      "refs": [
+        "cap.file_read"
+      ]
+    },
+    {
+      "element_id": "slack",
+      "kind": "external_entity",
+      "name": "Slack workspace reachable via bot token, including externally-shared channels",
+      "refs": [
+        "cap.slack_post"
+      ]
+    },
+    {
+      "element_id": "quicknotes_mcp",
+      "kind": "external_entity",
+      "name": "quicknotes_mcp third-party community MCP server and its hosted sync service",
+      "refs": [
+        "cap.notes_add",
+        "in.tool_definitions",
+        "in.notes_output"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.first_call_approval",
+      "name": "First-call-only approval, remembered as always-allow",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "Approval is requested only on the first invocation of each tool; subsequent calls, including later ones in this or other sessions, proceed without any review. Even on the first call the approval UI shows only the tool name, not the hidden instruction embedded in the tool description or the fact that file contents are sent to a third-party server, so it behaves like a model_summary gate rather than a raw-action gate. Because it provides no durable protection, it is not wired as an approval_gate_ref on any capability and earns no residual credit.",
+      "covers": [],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "approval_review_mode": "model_summary"
+    },
+    {
+      "control_id": "ctrl.pin_tool_definitions",
+      "name": "Pin/hash MCP tool definitions and alert on change",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Definition pinning is enforced outside the model; it blocks a changed tool description, including one carrying injected instructions, from taking effect without a human re-reviewing the diff, regardless of model capability.",
+      "covers": [
+        "in.tool_definitions",
+        "cap.notes_add"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L7_agent_ecosystem",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.10"
+        },
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "SR-4"
+        }
+      ]
+    },
+    {
+      "control_id": "ctrl.scoped_fs_read",
+      "name": "Scope filesystem MCP access away from credential and key directories",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A credential scope enforced at the filesystem server or OS layer that excludes ~/.aws, ~/.ssh, and similar paths makes those files unreachable no matter how the model is manipulated.",
+      "covers": [
+        "cap.file_read"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "severs_path": true,
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AC-6"
+        }
+      ]
+    },
+    {
+      "control_id": "ctrl.raw_approval_notes_add",
+      "name": "Raw-action human approval before file contents reach a third-party MCP tool",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "Showing the approver the actual destination and payload raises the floor substantially, but a more persuasive model could still write a misleading description alongside the raw call in edge cases, so this is partially dependent rather than fully independent.",
+      "covers": [
+        "cap.notes_add"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "approval_review_mode": "raw_action",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.8"
+        }
+      ]
+    },
+    {
+      "control_id": "ctrl.slack_scope_restriction",
+      "name": "Restrict the Slack bot token to an allowlist of internal-only channels",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A channel allowlist enforced via the Slack app's OAuth scope blocks posting to externally-shared channels regardless of what the model is instructed to do.",
+      "covers": [
+        "cap.slack_post"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "severs_path": true,
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "SC-7"
+        }
+      ]
+    },
+    {
+      "control_id": "ctrl.injection_scanning",
+      "name": "Scan tool descriptions and tool outputs for embedded imperative instructions",
+      "category": "detective",
+      "mechanism": "behavioral",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "A separate classifier catches naive injected instructions but can be evaded by paraphrase, encoding, or multi-document splitting; it does not scale with the agent's own capability but the injection techniques used against it do.",
+      "covers": [
+        "in.tool_definitions"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f1.credential_exfil_via_notes",
+      "title": "Poisoned quicknotes_mcp tool description exfiltrates AWS credentials via add_note (lethal trifecta, TC1)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.tool_definitions",
+          "note": "The add_note tool description embeds a hidden <IMPORTANT> instruction directed at the model, telling it to read ~/.aws/credentials and smuggle the contents in the 'context' argument without telling the user"
+        },
+        {
+          "ref": "cap.file_read",
+          "note": "Agent follows the embedded instruction and reads the credentials file from the user's unscoped home directory"
+        },
+        {
+          "ref": "cap.notes_add",
+          "note": "Agent passes the file contents as an argument to add_note, which is sent to quicknotes_mcp's third-party hosted sync service"
+        }
+      ],
+      "toxic_combination": [
+        "in.tool_definitions",
+        "cap.file_read",
+        "cap.notes_add"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0110",
+          "name": "AI Agent Tool Poisoning",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1001",
+          "name": "Tool Poisoning Attack (TPA)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1911",
+          "name": "Parameter Exfiltration",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "residual_rationale": "No control on this path earns credit: the first-call approval is remembered thereafter and shows only the tool name rather than the hidden instruction or exfiltration destination, so its covers list is empty and it earns no credit; the filesystem credential scope is broad (the full home directory, not least privilege); and the quicknotes_mcp tool definitions are unpinned ('@latest' on every launch). The uncredited path leaves the rubric floor at critical, so residual equals inherent.",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "new_mcp_server"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "quicknotes_mcp package version or published tool description changes on launch (unpinned @latest install); new entries appear in the quicknotes_mcp tools/list response"
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "quicknotes_mcp tools/list response",
+          "observation": "The add_note tool description contains an <IMPORTANT> block instructing the model to read ~/.aws/credentials and pass its contents in the 'context' argument, and to not mention this step to the user"
+        },
+        {
+          "locator": "mcp.json",
+          "observation": "quicknotes_mcp is launched with 'npx -y quicknotes-mcp@latest', so its published tool definitions are unpinned and can change on every launch"
+        },
+        {
+          "locator": "mcp.json",
+          "observation": "The filesystem server is mounted at C:/Users/dev, the entire user home directory, rather than a scoped subdirectory"
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "quicknotes_mcp is a community package published by an individual and calls a hosted sync service run by its author, which is the exfiltration destination"
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Scope the filesystem MCP server to a directory that excludes credential and key files (~/.aws, ~/.ssh, etc.), enforced at the server or OS layer",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pin and hash quicknotes_mcp (and other third-party MCP) tool definitions; block or require re-approval on any change",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.10"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require raw-action human approval, showing the full destination and arguments rather than a collapsed summary, before any argument containing file contents is sent to a third-party MCP tool",
+          "priority": "p1",
+          "audience": "reviewer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "behavioral",
+          "action": "Scan tool descriptions and tool list responses for embedded imperative instructions before loading them into context",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "information_disclosure"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.10"
+        },
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f2.credential_exfil_via_slack",
+      "title": "Hijacked goal could exfiltrate credentials to externally-shared Slack channels via the over-scoped bot token",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.tool_definitions",
+          "note": "The same hidden-instruction channel demonstrated against add_note can equally direct the agent to invoke slack.post_message, since goal hijack makes any reachable capability available, not only the one named in the poisoned description"
+        },
+        {
+          "ref": "cap.file_read",
+          "note": "Agent reads the credentials file as in f1"
+        },
+        {
+          "ref": "cap.slack_post",
+          "note": "Slack bot token can post the exfiltrated contents to any channel, including ones shared with external organizations"
+        }
+      ],
+      "toxic_combination": [
+        "in.tool_definitions",
+        "cap.file_read",
+        "cap.slack_post"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1104",
+          "name": "Over-Privileged Tool Abuse",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "residual_rationale": "The Slack bot token is a shared_service_account credential valid for any channel, including ones shared with external organizations, so no credential scoping narrows this path. The only approval control is the remembered first-call approval, which covers nothing on this path for the same reasons given in f1, leaving the floor at the uncredited critical inherent level.",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "model_upgrade"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Slack bot token scope widened to more channels, or agent autonomy raised so Slack posts no longer require any per-call review"
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "The Slack bot can post to any channel, including channels shared with external organizations"
+        },
+        {
+          "locator": "mcp.json",
+          "observation": "The Slack server is launched with a single SLACK_BOT_TOKEN env var with no channel scoping declared"
+        },
+        {
+          "locator": "quicknotes_mcp tools/list response",
+          "observation": "Demonstrates that a third-party tool description can hijack the agent's goal and direct it toward a different available capability, not only the one named in the poisoned description"
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Restrict the Slack bot token's channel scope to an allowlist of internal-only channels, excluding any channel shared with external organizations",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Apply the tool-definition pinning and scoped-filesystem controls recommended in f1, since they close the upstream hijack and credential-read steps this path shares with f1",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "information_disclosure",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "goal_manipulation",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AC-6"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "Both findings start from the same untrusted source: a community-published, unpinned, auto-updating third-party MCP server whose tool description already contains a live prompt-injection payload instructing the agent to read AWS credentials from an unscoped home-directory mount and exfiltrate them, either through the poisoned tool's own argument (f1) or, once the agent's goal is hijacked, through the broadly-scoped Slack bot (f2). No control in the current design earns residual credit on either path: the only approval mechanism is a first-call approval that is remembered as 'always allow' and shows no raw arguments, so it protects nothing after the first call and was recorded with an empty coverage list. Inherent, residual, and forecast all sit at critical because the paths are already open today and no named trigger could push them higher than the ceiling. The single highest-value fix is scoping the filesystem credential away from ~/.aws and ~/.ssh, which structurally severs the credential-read step that both findings depend on."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration shown in mcp.json, the quicknotes_mcp tools/list response, and the runtime notes, not observed runtime behavior of the agent.",
+    "No system prompt was provided, so instruction-level issues (ambiguous goals, conflicting directives) could not be reviewed.",
+    "No evidence was available on the quicknotes_mcp hosted sync service's actual data handling, retention, or access controls beyond what the runtime notes describe.",
+    "The extension of the hijack path to cap.slack_post (f2) is inferred from the agent's available tool set and the demonstrated hijack technique; the artifacts show the injected instruction targeting add_note specifically, not slack.post_message, so f2's confidence is medium rather than high."
+  ]
+}

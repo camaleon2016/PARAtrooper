@@ -1,0 +1,504 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "08_forecast_only_new_tool-run002",
+    "assessed_at": "2026-10-12T03:52:15Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.5",
+      "rubric_version": "0.2.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "docs-qa",
+    "name": "Docs QA Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.docs_search",
+      "tool_ref": "docs.search",
+      "action": "read",
+      "target": "engineering design docs",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.chat_reply",
+      "tool_ref": "chat reply",
+      "action": "send_external",
+      "target": "authenticated requesting employee (bound chat session)",
+      "data_sensitivity": "confidential",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.web_fetch",
+      "tool_ref": "web.fetch",
+      "action": "send_external",
+      "target": "arbitrary public URL selected to answer the question",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "unknown",
+      "maestro_layer": "L3_agent_frameworks",
+      "planned": true
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.employee_question",
+      "source": "Employee question submitted through SSO-authenticated chat",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.docs_search",
+        "cap.chat_reply"
+      ]
+    },
+    {
+      "input_id": "in.design_docs",
+      "source": "Engineering design docs (write access restricted to engineers)",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.docs_search",
+        "cap.chat_reply"
+      ]
+    },
+    {
+      "input_id": "in.jira_tickets",
+      "source": "Jira ticket content, including tickets filed by customers, via planned Jira MCP server",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.docs_search",
+        "cap.web_fetch"
+      ],
+      "planned": true
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": 3,
+    "max_runtime_minutes": 2,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:2",
+      "severity": "moderate",
+      "note": "\"Never paste secrets or credentials into answers\" is enforced only by model compliance. It has no technical backing today, and it does not mention the planned web.fetch tool or URL construction at all, so it would not cover a future exfiltration-via-URL vector."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "el.design_docs_store",
+      "kind": "data_store",
+      "name": "Engineering design docs repository",
+      "refs": [
+        "in.design_docs",
+        "cap.docs_search"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "el.jira_mcp_server",
+      "kind": "external_entity",
+      "name": "Jira MCP server (planned, includes customer-filed tickets)",
+      "refs": [
+        "in.jira_tickets"
+      ],
+      "planned": true
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.sso_auth",
+      "name": "SSO authentication of the requesting employee",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Identity is verified by the SSO provider outside the model; a more capable or coerced model cannot forge the requester's identity.",
+      "covers": [
+        "in.employee_question",
+        "docs-qa"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.recipient_bound",
+      "name": "Reply destination bound to the authenticated session",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The reply destination is derived from the authenticated session record, not chosen by the model, so it cannot be redirected to an attacker-controlled recipient under any model behavior.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "severs_path": true,
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctl.no_render",
+      "name": "Chat client does not render images or fetch links",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced client-side, outside the model. Removes the markdown-image/link covert exfiltration channel regardless of model behavior.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.read_only_credential",
+      "name": "docs.search credential is read-only",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Scope is enforced by the data store's credential, not the model, so it does not decay with model capability. It narrows impact (no write/delete) but does not prevent read-then-exfiltrate once an egress sink exists.",
+      "covers": [
+        "cap.docs_search"
+      ],
+      "status": "declared",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctl.no_network_egress",
+      "name": "No network egress capability exists today",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The absence of any egress-capable tool makes exfiltration structurally impossible today, independent of model behavior. This is the control the new_tool trigger directly defeats: adding web.fetch creates the first egress channel the design has ever had.",
+      "covers": [
+        "docs-qa"
+      ],
+      "status": "declared",
+      "severs_path": true,
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.secret_prompt_rule",
+      "name": "Prompt rule against pasting secrets or credentials",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Relies on model compliance. A more capable or adversarially prompted model can rationalize an exception or encode the content so a literal reading of the rule does not catch it.",
+      "covers": [
+        "cap.chat_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctl.egress_allowlist_missing",
+      "name": "Egress allowlist restricting web.fetch destinations",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "Even a destination allowlist can be defeated if the model is induced to embed exfiltrated content as a query string to an otherwise-allowed domain, unless request content is also constrained.",
+      "covers": [
+        "cap.web_fetch"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.jira_input_classifier_missing",
+      "name": "Trust labeling/injection classifier on Jira ticket content",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "A classifier inspects content, not intent, and multi-turn or multi-document payloads from customer-authored tickets can get past it; it narrows but does not sever the path.",
+      "covers": [
+        "in.jira_tickets"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctl.web_fetch_approval_missing",
+      "name": "Human approval gate (raw action review) for web.fetch calls",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "approval_review_mode": "raw_action",
+      "decay_rationale": "A raw-action approval gate is structurally independent of the model; the approver sees the actual destination and payload before the call is made.",
+      "covers": [
+        "cap.web_fetch"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctl.output_egress_filter_missing",
+      "name": "Output filter on web.fetch request parameters",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "A separate-model classifier does not scale with the agent's model; encoding or paraphrase in the constructed URL can get past it.",
+      "covers": [
+        "cap.web_fetch"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f.present_internal_qa_flow",
+      "title": "Confidential design docs reach the requesting employee through a bound, non-egress reply channel",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.design_docs",
+          "note": "Confidential engineering design docs, internal source"
+        },
+        {
+          "ref": "cap.docs_search",
+          "note": "Read-only retrieval, scoped credential"
+        },
+        {
+          "ref": "cap.chat_reply",
+          "note": "Reply delivered only to the authenticated requester; no link/image rendering"
+        }
+      ],
+      "threat_refs": [],
+      "inherent_risk": "low",
+      "residual_risk": "low",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "\"Replies go only to the authenticated requester. The chat client does not render images or fetch links. There is no network egress today. The credential is read only.\" These four facts together mean the only output channel is bound to the same session that asked the question, with no egress capability anywhere in the design."
+        }
+      ],
+      "forecast": {
+        "triggers": [
+          "new_tool",
+          "new_mcp_server",
+          "data_scope_expansion"
+        ],
+        "failing_controls": [],
+        "projected_risk": "low",
+        "watch_signal": "A change to the chat client that adds link/image rendering, or a change that makes the reply destination configurable rather than fixed to the authenticated session, would need this finding re-scored."
+      },
+      "stride": [],
+      "agentic_class": [],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks"
+      ],
+      "likelihood": "rare",
+      "consequence": "minor",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f.forecast_web_fetch_jira_exfil",
+      "title": "Lethal trifecta (TC1) opens if web.fetch and the Jira customer-ticket feed are added as planned",
+      "horizon": "forecast",
+      "attack_path": [
+        {
+          "ref": "in.jira_tickets",
+          "note": "Customer-filed Jira ticket carries injected instructions (untrusted source)"
+        },
+        {
+          "ref": "cap.docs_search",
+          "note": "Agent reads confidential design docs in response to the injected instruction"
+        },
+        {
+          "ref": "cap.web_fetch",
+          "note": "Agent fetches an attacker- or model-chosen URL with confidential content embedded as a query parameter, exfiltrating it"
+        }
+      ],
+      "toxic_combination": [
+        "in.jira_tickets",
+        "cap.docs_search",
+        "cap.web_fetch"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051",
+          "name": "LLM Prompt Injection",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1102",
+          "name": "Prompt Injection (Multiple Vectors)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1911",
+          "name": "Parameter Exfiltration",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "low",
+      "residual_risk": "low",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "\"Roadmap for next sprint: add a web.fetch tool so answers can include public references, and connect a Jira MCP server that includes tickets filed by customers.\" Neither element exists today, so no complete path from an untrusted source to an egress sink exists yet; both inherent and residual reflect that absence."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "\"There is no network egress today\" is the single fact that currently forecloses this path. Both planned additions remove it: web.fetch is the first egress-capable tool, and the Jira feed is the first untrusted (customer-authored) input source that would reach it."
+        }
+      ],
+      "forecast": {
+        "triggers": [
+          "new_tool",
+          "new_mcp_server",
+          "data_scope_expansion"
+        ],
+        "failing_controls": [
+          "ctl.no_network_egress"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "A tool manifest or MCP client config diff that adds a web.fetch tool, or a new Jira MCP server entry in the client config, either one occurring alone changes the risk profile; both together complete the trifecta."
+      },
+      "stride": [
+        "tampering",
+        "information_disclosure"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 3.1"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "8.2"
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Before enabling web.fetch, add a network egress allowlist restricting destinations to a vetted set of domains; never assemble the destination URL or query string from model output without passing it through that allowlist.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-7"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-4"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require a human approval gate with raw action review (full destination URL and payload visible, not a summary) before any web.fetch call whose triggering context includes content from the Jira customer-ticket feed.",
+          "priority": "p1",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Label all content ingested from the Jira MCP server as untrusted at the point it enters context, and block it from directly conditioning tool-call arguments without passing through an injection classifier.",
+          "priority": "p2",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Log every web.fetch destination and request parameter; alert when parameters match confidential document identifiers or unusually long encoded strings.",
+          "priority": "p2",
+          "audience": "reviewer",
+          "rmf_function": "MEASURE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Extend the existing 'never paste secrets' prompt rule to explicitly cover URL construction and query parameters once web.fetch exists, while treating this only as a secondary layer behind the structural controls above.",
+          "priority": "p3",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "likelihood": "rare",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "low",
+    "residual": "low",
+    "forecast": "critical",
+    "rationale": "The design as built today is well-contained: there is no egress-capable tool at all, the only reply channel is bound to the authenticated session that asked the question, images and links are not rendered, and the docs.search credential is read-only. No present finding exceeds low. The roadmap, however, names two additions for next sprint that together reconstruct the lethal-trifecta pattern (untrusted source, confidential read, egress): a web.fetch tool (the design's first egress channel) and a Jira MCP server whose ticket content includes customer-authored (untrusted) text. The single control carrying almost all of today's safety is the simple fact that no egress capability exists; adding web.fetch directly defeats it (forecast trigger new_tool), and the Jira feed supplies the untrusted content that would drive it (new_mcp_server, data_scope_expansion). No control in the current design covers the planned web.fetch capability or the planned Jira input, so the projected tier on that path is critical. This assessment should gate the roadmap items: do not ship either addition without the missing structural controls recorded above (egress allowlist, raw-action approval gate on web.fetch, and untrusted-input labeling for Jira content)."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration described in the provided artifacts, not observed runtime behavior.",
+    "No MCP configuration, tool manifest, or IaC was provided; current capabilities and the planned web.fetch tool and Jira MCP server are inferred from prose roadmap notes, which limits confidence on their exact future scope to medium.",
+    "Autonomy level and step/runtime limits are not explicitly stated in the artifacts and were inferred from the single-turn Q&A description; verify against actual runtime configuration.",
+    "The Jira MCP server's eventual tool list, field-level access, and whether customer ticket content is filtered before reaching the agent are not yet specified; the forecast assumes the most common and least restrictive shape for that connection."
+  ]
+}

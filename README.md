@@ -128,19 +128,20 @@ Use one `--out` folder per model. Each run records token use and cost in a `run_
 
 ### Across models
 
-The same 13 cases, 5 runs each, with the same rubric and schema:
+The same 13 cases, 5 runs each, with the same rubric and schema, on v0.3.5:
 
 | Measure | Claude (claude-sonnet-5) | GPT-5.4 (Azure) |
 |---|---|---|
-| Mean recall | 96% | 93% |
-| Validator clean | 95% | 92% |
-| Runs with a false positive | 4 of 65 | 0 of 65 |
-| GitHub MCP backtest (May 2025): recall, rated critical | 100%, every run | 100%, every run |
-| Supabase MCP backtest (July 2025): recall, rated critical | 88%, every run | 100%, every run |
-| Lowest main path residual agreement | 80% | 40% |
-| Mean output tokens per assessment | 29,264 | 4,391 |
+| Mean recall | 95% | 93% |
+| Validator clean | 100% | 98% |
+| Runs with a false positive | 2 of 65 | 1 of 65 |
+| GitHub MCP backtest (May 2025): recall, rated critical | 96%, every run | 100%, every run |
+| Supabase MCP backtest (July 2025): recall, rated critical | 80%, every run | 92%, every run |
+| Lowest main path residual agreement | 60% | 60% |
+| Mean output tokens per assessment | 30,309 | 4,413 |
+| Cost per assessment at list prices | about $0.31 | about $0.07 |
 
-Details: [Claude results](evals/RESULTS.md) and [notes](evals/RESULTS_NOTES.md); [GPT-5.4 results](evals/runs-gpt-54/RESULTS.md) and [notes](evals/runs-gpt-54/RESULTS_NOTES.md). The GPT-5.4 batch cost $4.76 at Azure list prices.
+Details: [Claude v0.3.5](evals/runs-claude-v035/RESULTS.md) and [notes](evals/runs-claude-v035/RESULTS_NOTES.md); [GPT-5.4 v0.3.5](evals/runs-gpt-54-v035/RESULTS.md) and [notes](evals/runs-gpt-54-v035/RESULTS_NOTES.md). Earlier batches: [Claude v0.3.3](evals/RESULTS.md) and [GPT-5.4 v0.3.4](evals/runs-gpt-54/RESULTS.md).
 
 ### By version
 
