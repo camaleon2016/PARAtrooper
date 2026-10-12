@@ -2,6 +2,8 @@
 
 ## 0.3.5 (unreleased)
 
+Measured on Claude and GPT-5.4: validator clean 100% and 98%, recall 95% and 93%; GPT-5.4's vocabulary failures fell from 5 to 0 and its recorded missing controls doubled. See `evals/runs-claude-v035/` and `evals/runs-gpt-54-v035/`.
+
 Two model independent fixes exposed by the GPT-5.4 batch (see `evals/runs-gpt-54/RESULTS_NOTES.md`). Rubric unchanged (0.2.2). Schema structure unchanged (0.5.0); only field descriptions changed.
 
 ### Changed

@@ -1,0 +1,490 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "07_memory_poisoning-run002",
+    "assessed_at": "2026-10-12T03:29:11Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.5",
+      "rubric_version": "0.2.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "research-assistant",
+    "name": "Research Assistant",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.memory_write",
+      "tool_ref": "memory.save",
+      "action": "write",
+      "target": "agent long-term memory store",
+      "data_sensitivity": "internal",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.email_send",
+      "tool_ref": "mail.send",
+      "action": "send_external",
+      "target": "user's mailbox, any recipient address",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "user_delegated",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.drive_read",
+      "tool_ref": "drive.read",
+      "action": "read",
+      "target": "user's full document drive",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.web_content",
+      "source": "Web pages fetched during research",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.memory_write",
+        "cap.drive_read",
+        "cap.email_send"
+      ]
+    },
+    {
+      "input_id": "in.memory_recall",
+      "source": "Memories recalled at session start and injected into the system prompt",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.email_send",
+        "cap.drive_read",
+        "cap.memory_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "implied_authority",
+      "evidence_locator": "prompt.md:4",
+      "severity": "critical",
+      "note": "Recalled memories, which can contain content derived from untrusted web pages via memory.save, are explicitly instructed to be treated as the user's own instructions, granting them the user's authority with no provenance or trust check."
+    },
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:2-3",
+      "severity": "high",
+      "note": "The agent is told to save 'anything useful' about preferences or standing instructions with no restriction on source, sensitivity, or review before persistence."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:1-4",
+      "severity": "high",
+      "note": "The entire memory trust model rests on a prompt instruction, with no structural enforcement such as provenance tagging, approval, or scoping behind it."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "el.memory_store",
+      "kind": "data_store",
+      "name": "Agent long-term memory store",
+      "refs": [
+        "cap.memory_write",
+        "in.memory_recall"
+      ],
+      "is_audit_record": false
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.memory_provenance",
+      "name": "Memory write provenance and trust tagging, enforced at the store",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "If enforced at the store rather than via model-written tags, this stays independent of model capability. It is defeated if the enforcement point is removed (control_removal) or if memory scope expands beyond what it tags (data_scope_expansion).",
+      "covers": [
+        "cap.memory_write",
+        "in.memory_recall",
+        "el.memory_store"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctl.email_approval",
+      "name": "Human approval gate on mail.send, raw action review",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Independent of model capability only if the approver sees the raw recipient and body. Decays under autonomy_increase or control_removal if the gate is later loosened or removed, and under sustained high volume (approval fatigue).",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "approval_review_mode": "raw_action"
+    },
+    {
+      "control_id": "ctl.drive_scope",
+      "name": "Scope drive.read credential to task-relevant folders (least privilege)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Independent of model capability; defeated only if scope later widens (data_scope_expansion) or the restriction is removed (control_removal). Narrows the path but does not sever it, since task-relevant folders may still hold confidential files.",
+      "covers": [
+        "cap.drive_read"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctl.recipient_confirmation",
+      "name": "Recipient confirmation bound to the user's address book (system of record)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Does not decay with model capability because the destination is drawn from the system of record rather than model output, so an attacker-chosen external address cannot be reached regardless of model behavior.",
+      "covers": [
+        "cap.email_send"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "severs_path": true
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "find.tc1_lethal_trifecta",
+      "title": "Lethal trifecta (TC1): untrusted web content read during research reaches confidential drive data and uncontrolled email egress",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.web_content",
+          "note": "Untrusted content is read during the research task."
+        },
+        {
+          "ref": "cap.drive_read",
+          "note": "Agent reads confidential drive content, broadly scoped, as directed by the research flow."
+        },
+        {
+          "ref": "cap.email_send",
+          "note": "Agent sends email to any address, including an address supplied by the untrusted content, with no approval."
+        }
+      ],
+      "toxic_combination": [
+        "in.web_content",
+        "cap.drive_read",
+        "cap.email_send"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051.001",
+          "name": "LLM Prompt Injection: Indirect",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1102",
+          "name": "Prompt Injection (Multiple Vectors)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1104",
+          "name": "Over-Privileged Tool Abuse",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal",
+          "model_upgrade"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "No controls currently exist on this path, so the tier is already at its ceiling; watch for any later-added approval or scoping control being disabled without review, or autonomy being raised further."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "mail.send can send to any address without approval."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "drive.read covers the user's full drive, which holds confidential work files."
+        },
+        {
+          "locator": "prompt.md:1",
+          "observation": "The agent both researches topics (ingesting untrusted web content) and drafts/sends emails in the same session, with no separation between untrusted content ingestion and the email send tool."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require a human approval gate on mail.send that shows the raw recipient and full body, not a model-generated summary, before sending.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-3"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Scope drive.read credentials to least privilege / task-relevant folders instead of the full drive.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bind email recipient selection to the user's existing contact list (system of record) rather than letting the model choose a destination address freely.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "find.tc5_memory_laundering",
+      "title": "Memory laundering (TC5): web-sourced content written to memory is later treated as the user's own trusted instructions",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.web_content",
+          "note": "Untrusted content encountered during research."
+        },
+        {
+          "ref": "cap.memory_write",
+          "note": "Agent is instructed to save 'anything useful,' including content derived from the untrusted page, to memory with no provenance."
+        },
+        {
+          "ref": "in.memory_recall",
+          "note": "At the next session start, the saved content is recalled and, per prompt.md:4, treated as the user's own instruction."
+        },
+        {
+          "ref": "cap.drive_read",
+          "note": "The now-trusted 'instruction' directs a read of confidential drive content."
+        },
+        {
+          "ref": "cap.email_send",
+          "note": "The content is sent externally with no approval."
+        }
+      ],
+      "toxic_combination": [
+        "in.web_content",
+        "cap.memory_write",
+        "in.memory_recall",
+        "cap.email_send"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI06",
+          "name": "Memory and Context Poisoning",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0080.000",
+          "name": "AI Agent Context Poisoning: Memory",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1204",
+          "name": "Context Memory Implant",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "data_scope_expansion",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Growth in memory store size or recall frequency per session, or a model upgrade that writes more persistent, more convincing 'standing instructions' into memory and follows them more reliably across sessions."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "Agent is instructed to save 'anything useful about the user's preferences or standing instructions' via memory.save, with no restriction on the source of that information."
+        },
+        {
+          "locator": "prompt.md:4",
+          "observation": "Recalled memories are explicitly instructed to be treated 'as the user's own instructions,' granting them implied authority regardless of origin."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "memory.save accepts free text. There is no provenance on memory entries and the user never reviews them."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Recalled memories are injected into the system prompt of every new session."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Tag memory entries with provenance (source, trust level) at write time, enforced by the memory store, and never treat memory derived from tool/web output as a trusted instruction.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.7"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Remove the instruction to treat all recalled memories as the user's own instructions; treat memory recall as untrusted context unless provenance marks it trusted.",
+          "priority": "p1",
+          "audience": "developer",
+          "rmf_function": "MAP"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Let the user review and approve new memory entries before they persist across sessions.",
+          "priority": "p2",
+          "audience": "both",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "tampering"
+      ],
+      "agentic_class": [
+        "memory_poisoning",
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 3.1"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.7"
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "Both findings reach an S3 sink (irreversible, confidential-data egress via mail.send) from a U source (untrusted web content, directly or laundered through unprovenanced memory treated as trusted per prompt.md:4), giving inherent risk of critical by the base matrix. No structural or behavioral controls of any kind are declared in the design: mail.send has no approval, drive.read is unscoped, and memory.save has no provenance or review. With zero credited controls, residual equals the inherent floor (critical) for both findings. Forecasts remain at critical because the tier is already at ceiling; no trigger can raise it further, though model_upgrade, longer_task_horizon, and data_scope_expansion would make exploitation more reliable and more persistent once any of the recommended controls are added. The single highest-value fix is adding a provenance check at the memory store (ctl.memory_provenance) combined with a raw-action approval gate on mail.send (ctl.email_approval), since together they would address both the persistence mechanism (TC5) and the single-session exfiltration path (TC1)."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration described in the provided system prompt and runtime notes, not observed runtime behavior of the deployed agent.",
+    "No MCP configuration, tool manifest schema, or IaC was provided; the exact boundary of drive.read and mail.send permissions is inferred from the runtime notes, so confidence on precise scope is medium even though the overall path is rated high confidence.",
+    "No information was provided on whether any human reviews sent emails or memory entries after the fact; absence of any review step is inferred from the runtime notes stating no approval exists and the user never reviews memory."
+  ]
+}
