@@ -21,6 +21,16 @@ Schema 0.6.0. Rubric 0.3.0. Implements `design/0.4.0-stride-coverage.md` and the
 - SKILL.md step 8: tag both the entry technique and the impact technique of an attack; and a design with no complete path today has no present path finding above `low`.
 - The worked example declares elements and a complete STRIDE coverage matrix.
 
+### Corrected after the first GPT-5.4 batch (unreleased)
+The first v0.4.0 batch on GPT-5.4 was 29 percent validator clean. Most failures were the validator being stricter than the design intended, not the assessments being wrong. Those runs are kept in `evals/archive/0.4.0-pre/`.
+- Coverage of pairs beyond the required set (an internal flow, repudiation on a log store) is allowed, as long as the element kind can carry the category. Rejecting it caused 34 failures.
+- A coverage entry marked `finding` whose finding does not list the category is a warning, not an error, and the scorer counts the category either way. It caused 28 failures.
+- An element may list its own id in `refs`. Cases whose stable ids are stores triggered 13 failures.
+- STRIDE coverage is required only for schema 0.6.0 and later, so baseline runs of earlier versions are judged by their own rules.
+- A residual below the floor the rubric credits allow is now an error, not a warning. A security assessment should never understate risk silently.
+- Approval volume has a threshold: `low` means fewer than about 20 requests per approver a day, or each request reviewed individually.
+- Precedence rule: when every triggering source is trusted or internal and the harm is a missing limit or record, use a property finding, not a path finding.
+
 ## 0.3.5 (2026-10-12)
 
 Measured on Claude and GPT-5.4: validator clean 100% and 98%, recall 95% and 93%; GPT-5.4's vocabulary failures fell from 5 to 0 and its recorded missing controls doubled. See `evals/runs-claude-v035/` and `evals/runs-gpt-54-v035/`.

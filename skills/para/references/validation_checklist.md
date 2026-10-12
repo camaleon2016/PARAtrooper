@@ -27,8 +27,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Coverage (schema 0.6.0)
 
-- **Error:** `stride_coverage` is present, and every element has exactly one entry for each STRIDE category that applies to its kind (references/stride_agentic.md). Entries name declared elements and applicable categories only.
-- **Error:** a `finding` entry names findings that exist and list that category in their `stride`; a `mitigated` entry names declared or verified controls, never missing ones; `not_applicable` and `not_assessed` entries give a rationale of at least 30 characters.
+- **Error:** `stride_coverage` is present (schema 0.6.0 and later), and every element has an entry for each STRIDE category its kind requires (references/stride_agentic.md). Extra entries are allowed, but only for categories the element kind can carry, and never twice for the same pair.
+- **Error:** a `finding` entry names findings that exist; a `mitigated` entry names declared or verified controls, never missing ones; `not_applicable` and `not_assessed` entries give a rationale of at least 30 characters. **Warning:** the named finding does not list that category in its `stride`.
 - **Warning:** a behavioral control cited as mitigating repudiation or denial of service; more than half the pairs marked `not_applicable`; a finding with `stride` labels that no coverage entry references; an input or egress capability that appears in no element's `refs`.
 - **Error:** a property finding (`finding_kind: property`) has `affected_refs` that are all defined, and no `attack_path`.
 - **Warning:** a property finding's inherent tier matches rubric section 5a (I row of the base matrix, autonomy modifier, capped at `high`).
@@ -40,7 +40,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 15. **Error:** every finding has a `forecast` block. If no trigger changes the tier, list the triggers you considered and set `projected_risk` equal to `residual_risk`.
 16. **Error:** `forecast.projected_risk` is not below `residual_risk`, every `failing_controls` entry is a defined control, and `triggers` is not empty. **Warning:** `watch_signal` is set, and an independent control is listed as failing only under a trigger that can defeat it.
 17. **Warning:** for present findings, `inherent_risk` matches the rubric's base matrix and autonomy modifier (rubric section 4).
-18. **Warning:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5), and if it is above that floor, `residual_rationale` explains why.
+18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Warning:** if it is above that floor, `residual_rationale` explains why.
 19. **Warning:** any finding with residual above `low` has at least one recommendation.
 20. **Warning:** a finding with structural preventive or containment recommendations has at least one `missing_recommended` control whose `covers` includes an id on its attack path.
 21. **Error:** a treatment with option `accept` names `treatment.approved_by`.

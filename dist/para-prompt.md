@@ -79,7 +79,7 @@ Load `references/protocols.md`. Record each MCP, A2A, or API connection in `prot
 
 Load `references/control_decay.md`. For each control, set `mechanism`, `capability_dependence`, `decay_rationale`, and `maestro_layer`. When the classification is not clear, follow the classification rules at the end of that file.
 
-- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary` (if the approver sees arguments only behind a collapsed link, use `model_summary`), and set `approval_volume`: `low` only when the design says each request can be reviewed; `high` for dozens or more a day; `unknown` when the artifacts do not say.
+- For every human approval gate, set `approval_review_mode` to `raw_action` or `model_summary` (if the approver sees arguments only behind a collapsed link, use `model_summary`), and set `approval_volume`: `low` only when the design says each approver sees fewer than about 20 requests a day, or says each request is reviewed individually; `high` for more than that, or when approval is granted once and remembered; `unknown` when the artifacts do not say. A stated figure such as 150 approvals a day is `high`.
 - Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
 - Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
@@ -92,9 +92,11 @@ Load `references/toxic_combinations.md` and follow its search procedure. `toxic_
 
 If no untrusted source reaches a sensitive sink today, do not create a present path finding above `low`; risks that depend on planned changes are forecast findings (rubric section 5a).
 
+When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it.
+
 ### 8b. STRIDE per element coverage
 
-Load `references/stride_agentic.md`. Make sure `elements` includes the minimum elements it lists. For each element, consider every STRIDE category that applies to its kind and record one `stride_coverage` entry per pair, with status `finding`, `mitigated`, `not_applicable`, or `not_assessed`, following that file. Missing properties, such as no attributable record of actions or no spend, rate, or step limit, are findings with `finding_kind: property`, not `not_applicable`. The validator rejects an assessment without complete coverage.
+Load `references/stride_agentic.md`. Make sure `elements` includes the minimum elements it lists. For each element, consider every STRIDE category that applies to its kind and record one `stride_coverage` entry per pair, with status `finding`, `mitigated`, `not_applicable`, or `not_assessed`, following that file. **When an entry is `finding`, add that category to the named finding's `stride` list.** Covering pairs beyond the required set is fine. Missing properties, such as no attributable record of actions or no spend, rate, or step limit, are findings with `finding_kind: property`, not `not_applicable`. The validator rejects an assessment without complete coverage.
 
 ### 9. Compute tiers
 
@@ -171,7 +173,7 @@ A human approval gate is structurally independent of the model, but its effectiv
 
 Scoring (schema 0.6.0 and later):
 - Record `approval_review_mode` on every approval gate: `raw_action` or `model_summary`. A gate without it is scored as `model_summary`.
-- Record `approval_volume`: `low` when the design says each request can be reviewed, `high` for dozens or more a day, `unknown` when not stated. Rubric section 5 step 2 gives low volume two tiers of credit and high or unknown volume one, and only a raw action, low volume gate can bring residual below `moderate`.
+- Record `approval_volume`: `low` only when the design says each approver sees fewer than about 20 requests a day, or says each request is reviewed individually; `high` for more than that, or when approval is granted once and remembered; `unknown` when the artifacts do not say. Rubric section 5 step 2 gives low volume two tiers of credit and high or unknown volume one, and only a raw action, low volume gate can bring residual below `moderate`.
 - Classify raw action gates as `independent`. Classify summary gates as `partially_dependent`.
 - If the design implies high approval volume, list `autonomy_increase` and `longer_task_horizon` as triggers and name the gate in `failing_controls`, and put the volume in `watch_signal`.
 - A per call prompt that shows arguments only behind a collapsed link is `model_summary` in practice. Evals 10 and 11 are public incidents where this gate failed.
@@ -461,11 +463,11 @@ The credit caps in steps 3 and 4 are deliberate. Stacking five prompt instructio
 
 The `partially_dependent` structural controls (for example, a tool allowlist that can be chained around) are credited at step 3.
 
-Approval volume (step 2): use `low` only when the design says an approver sees few enough requests to review each one. Dozens or more a day, or approval granted once and remembered, is `high`. When the artifacts do not say, use `unknown`. The v0.3.x backtests showed why: the GitHub MCP incident's approval prompt failed under real approval volume, and both Claude and GPT-5.4 runs judged it weaker than the old two tier credit.
+Approval volume (step 2): use `low` only when the design says each approver sees fewer than about 20 requests a day, or says each request is reviewed individually; `high` for more than that, or when approval is granted once and remembered; `unknown` when the artifacts do not say. The v0.3.x backtests showed why: the GitHub MCP incident's approval prompt failed under real approval volume, and both Claude and GPT-5.4 runs judged it weaker than the old two tier credit.
 
 The approval gate floor applies to the final residual, after steps 3 and 4. Stacking other controls on top of a summary gate cannot push the residual below `moderate`, because the approver is still deciding on the model's description of the action.
 
-**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`. Never rate residual below the floor.
+**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`. Never rate residual below the floor; the validator rejects it.
 
 `scripts/validate.py` computes the floor from the controls on the path. It warns when a document claims less, and when a document claims more without a `residual_rationale`.
 
@@ -476,6 +478,8 @@ The v0.3.1 eval batch showed why this rule exists: every run kept residual at or
 ## 5a. Property findings
 
 Some risks have no attack path: a missing property such as attributable provenance, a spend or step limit, or a rate limit. Record them as findings with `finding_kind: property`, list the affected capabilities in `affected_refs`, and leave `attack_path` empty.
+
+**Precedence.** When every source that could trigger the harm is trusted or internal, and the harm comes from a missing limit or a missing record, use a property finding, not a path finding from the internal source. A path finding from an internal source plus the autonomy modifier would rate it `critical`, which section 5a reserves for complete attack paths from untrusted sources.
 
 1. **Sink class.** Take the highest sink class (section 2) among `affected_refs`.
 2. **Base tier.** Use the **I row** of the base matrix: S3 `high`, S2 `moderate`, S1 and S0 `low`. A missing property is exposed to internal error and misuse as readily as to an attacker.
@@ -582,7 +586,7 @@ From schema 0.6.0, every assessment records STRIDE per element in `stride_covera
 - every memory, vector store, log, audit record, quota, or configuration the design depends on, as a `data_store` (set `is_audit_record` on stores whose integrity makes actions attributable);
 - every protocol peer, as a `process` (inside the trust domain) or an `external_entity`.
 
-**Which categories apply.** The validator requires exactly these pairs:
+**Which categories apply.** The validator requires these pairs. You may cover more (for example, an internal flow, or repudiation on a log store you did not mark as an audit record), as long as the category is one the element kind can carry:
 
 | Element kind | Categories |
 |---|---|
@@ -702,8 +706,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Coverage (schema 0.6.0)
 
-- **Error:** `stride_coverage` is present, and every element has exactly one entry for each STRIDE category that applies to its kind (references/stride_agentic.md). Entries name declared elements and applicable categories only.
-- **Error:** a `finding` entry names findings that exist and list that category in their `stride`; a `mitigated` entry names declared or verified controls, never missing ones; `not_applicable` and `not_assessed` entries give a rationale of at least 30 characters.
+- **Error:** `stride_coverage` is present (schema 0.6.0 and later), and every element has an entry for each STRIDE category its kind requires (references/stride_agentic.md). Extra entries are allowed, but only for categories the element kind can carry, and never twice for the same pair.
+- **Error:** a `finding` entry names findings that exist; a `mitigated` entry names declared or verified controls, never missing ones; `not_applicable` and `not_assessed` entries give a rationale of at least 30 characters. **Warning:** the named finding does not list that category in its `stride`.
 - **Warning:** a behavioral control cited as mitigating repudiation or denial of service; more than half the pairs marked `not_applicable`; a finding with `stride` labels that no coverage entry references; an input or egress capability that appears in no element's `refs`.
 - **Error:** a property finding (`finding_kind: property`) has `affected_refs` that are all defined, and no `attack_path`.
 - **Warning:** a property finding's inherent tier matches rubric section 5a (I row of the base matrix, autonomy modifier, capped at `high`).
@@ -715,7 +719,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 15. **Error:** every finding has a `forecast` block. If no trigger changes the tier, list the triggers you considered and set `projected_risk` equal to `residual_risk`.
 16. **Error:** `forecast.projected_risk` is not below `residual_risk`, every `failing_controls` entry is a defined control, and `triggers` is not empty. **Warning:** `watch_signal` is set, and an independent control is listed as failing only under a trigger that can defeat it.
 17. **Warning:** for present findings, `inherent_risk` matches the rubric's base matrix and autonomy modifier (rubric section 4).
-18. **Warning:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5), and if it is above that floor, `residual_rationale` explains why.
+18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Warning:** if it is above that floor, `residual_rationale` explains why.
 19. **Warning:** any finding with residual above `low` has at least one recommendation.
 20. **Warning:** a finding with structural preventive or containment recommendations has at least one `missing_recommended` control whose `covers` includes an id on its attack path.
 21. **Error:** a treatment with option `accept` names `treatment.approved_by`.
@@ -1310,7 +1314,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
               "high",
               "unknown"
             ],
-            "description": "For human approval gates only. low: an approver sees a handful of requests a day and can review each. high: dozens or more a day, or approval granted once and remembered. unknown: not stated. Rubric section 5 step 2: low volume earns two tiers, high or unknown earns one."
+            "description": "For human approval gates only. low: the design says each approver sees fewer than about 20 requests a day, or each request is reviewed individually. high: more than that, or approval granted once and remembered. unknown: not stated. Rubric section 5 step 2: low volume earns two tiers, high or unknown earns one."
           },
           "constrains_sink": {
             "type": "boolean",
