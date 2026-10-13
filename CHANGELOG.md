@@ -30,6 +30,8 @@ The first v0.4.0 batch on GPT-5.4 was 29 percent validator clean. Most failures 
 - A residual below the floor the rubric credits allow is now an error, not a warning. A security assessment should never understate risk silently.
 - Approval volume has a threshold: `low` means fewer than about 20 requests per approver a day, or each request reviewed individually.
 - Precedence rule: when every triggering source is trusted or internal and the harm is a missing limit or record, use a property finding, not a path finding.
+- The "below the floor" error applies from schema 0.6.0; earlier documents keep the warning they were built against.
+- Scorer: `required_threat_ids_any` and `required_evidence_any` let a requirement accept alternatives where the skill's references allow more than one correct answer. Case 12's expectation now accepts ASI10 as well as ASI03 (the crosswalk maps repudiation to ASI10), and common phrasings of the engineer's token. The corrected expectation is applied when scoring every version, so comparisons stay fair.
 
 ## 0.3.5 (2026-10-12)
 

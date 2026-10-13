@@ -84,7 +84,10 @@ def check_case(exp_path: Path) -> list[str]:
         if ref not in ids:
             problems.append(f"{where}: '{ref}' is not in the case's stable ids table")
 
-    for tid in exp.get("required_threat_ids", []):
+    for group in exp.get("required_threat_ids_any", []):
+        if not isinstance(group, list) or len(group) < 2:
+            problems.append(f"{where}: each required_threat_ids_any entry must list two or more alternatives")
+    for tid in exp.get("required_threat_ids", []) + [x for g in exp.get("required_threat_ids_any", []) for x in g]:
         if not ASI_ID.match(tid):
             problems.append(f"{where}: threat id '{tid}' is not an OWASP ASI id")
     for trig in exp.get("required_triggers", []):
