@@ -42,6 +42,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -200,6 +201,39 @@ def call_model(client, model: str, system: str, user: str, max_tokens: int, temp
     return call_anthropic(client, model, system, user, max_tokens, temperature, options)
 
 
+class TransientCallError(RuntimeError):
+    """A call that kept failing at the connection level after every retry."""
+
+
+TRANSIENT_NAME_PARTS = ("Connection", "Protocol", "Timeout", "ReadError", "WriteError", "Incomplete")
+
+
+def is_transient(exc: BaseException) -> bool:
+    """Connection drops mid response surface as raw HTTP library errors (for example
+    RemoteProtocolError: peer closed connection), which the SDKs' own retries do not cover once a
+    stream has started. Status errors such as 400 or 401 are not transient and are never retried here."""
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    return any(part in type(exc).__name__ for part in TRANSIENT_NAME_PARTS)
+
+
+def call_with_retries(call, retries: int, wait_seconds: float = 15.0, sleep=None):
+    """Run call(), retrying connection level failures with a growing pause. Each retry is a fresh
+    request, so a dropped stream costs at most the tokens already generated."""
+    for attempt in range(retries + 1):
+        try:
+            return call()
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            if not is_transient(exc):
+                raise
+            if attempt == retries:
+                raise TransientCallError(f"{type(exc).__name__}: {exc} (after {retries} retries)") from exc
+            print(f"    connection dropped ({type(exc).__name__}); retrying in {wait_seconds * (attempt + 1):.0f}s",
+                  file=sys.stderr)
+            (sleep or time.sleep)(wait_seconds * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 def make_client(args: argparse.Namespace):
     """Returns (client, api_error_types), or (None, key_env) when the key is missing.
     Imports each SDK only when it is used."""
@@ -345,6 +379,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--reasoning-effort", choices=["low", "medium", "high"],
                     help="for reasoning models on --provider openai; lower is cheaper")
     ap.add_argument("--json-mode", action="store_true", help="ask an OpenAI compatible endpoint for a JSON object")
+    ap.add_argument("--call-retries", type=int, default=2,
+                    help="retries when a connection drops mid response (the SDK does not retry these)")
     ap.add_argument("--max-retries", type=int, default=8,
                     help="retries with backoff on rate limits (429) and transient errors; low quota "
                     "subscriptions need several, since each call is large")
@@ -419,8 +455,10 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
             text, meta = "", {}
             started = dt.datetime.now(dt.timezone.utc)
             try:
-                text, meta = call_model(client, args.model, system, build_user_message(case, run_id),
-                                        args.max_tokens, args.temperature, options)
+                user = build_user_message(case, run_id)
+                text, meta = call_with_retries(
+                    lambda: call_model(client, args.model, system, user, args.max_tokens, args.temperature, options),
+                    args.call_retries)
                 if meta.get("stop_reason") == "max_tokens":
                     raise ValueError(f"output truncated at --max-tokens {args.max_tokens}; raise it and rerun")
                 doc = extract_json(text)
@@ -432,7 +470,7 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
                 (out_dir / f"run_{i:03d}.raw.txt").write_text(text, encoding="utf-8")
                 status = f"unparseable output ({exc})"
                 failures += 1
-            except api_errors as exc:
+            except api_errors + (TransientCallError,) as exc:
                 doc = {"_parse_error": f"api error: {exc}"}
                 status = f"api error: {' '.join(str(exc).split())[:200]}"
                 failures += 1
