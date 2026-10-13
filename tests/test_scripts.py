@@ -1,5 +1,6 @@
 import copy
 import json
+import pytest
 from pathlib import Path
 
 import check_cases
@@ -854,3 +855,39 @@ def test_below_floor_is_a_warning_for_older_schemas():
     doc["rating"]["residual"] = "low"
     errors, warnings = run(doc)
     assert not has(errors, "below what path controls") and has(warnings, "below what path controls")
+
+
+class RemoteProtocolError(Exception):
+    """Stands in for httpx's error when a server closes a stream mid response."""
+
+
+def test_dropped_connection_is_retried_then_recorded(tmp_path, monkeypatch):
+    import run_skill  # pylint: disable=import-outside-toplevel
+    calls = {"n": 0}
+
+    def flaky(*_a, **_k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RemoteProtocolError("peer closed connection without sending complete message body")
+        return EXAMPLE.read_text(encoding="utf-8"), {"stop_reason": "end_turn"}
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(run_skill, "RUNS", tmp_path)
+    monkeypatch.setattr(run_skill, "call_model", flaky)
+    monkeypatch.setattr(run_skill.time, "sleep", lambda s: None)
+    assert run_skill.main(["--model", "m", "--case", "01_support_triage", "--runs", "1"]) == 0
+    assert run_skill.completed(tmp_path / "01_support_triage" / "run_000.json")
+
+    def always_drops(*_a, **_k):
+        raise RemoteProtocolError("peer closed connection")
+    monkeypatch.setattr(run_skill, "call_model", always_drops)
+    assert run_skill.main(["--model", "m", "--case", "02_hr_policy_qa", "--runs", "2", "--call-retries", "1"]) == 0
+    for i in range(2):  # recorded as failed runs, and the batch kept going
+        doc = json.loads((tmp_path / "02_hr_policy_qa" / f"run_00{i}.json").read_text(encoding="utf-8"))
+        assert "after 1 retries" in doc["_parse_error"]
+
+
+def test_status_errors_are_not_retried():
+    import run_skill  # pylint: disable=import-outside-toplevel
+    with pytest.raises(ValueError):
+        run_skill.call_with_retries(lambda: (_ for _ in ()).throw(ValueError("400 bad request")), 3, sleep=lambda s: None)
