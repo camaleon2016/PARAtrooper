@@ -79,11 +79,11 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 
 ### 8. Find attack paths
 
-Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`. **Tag both ends of an attack:** the technique an attacker uses to get in (for injected content, ASI01 and AML.T0051) and the technique that produces the harm (for example, ASI02 and AML.T0086 for exfiltration through a tool). When they differ, include both.
+Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`. **Tag both ends of an attack:** the technique an attacker uses to get in (for injected content, ASI01 and AML.T0051) and the technique that produces the harm (for example, ASI02 and AML.T0086 for exfiltration through a tool). When they differ, include both. When an agent acts with a person's own credentials (a personal token, a delegated session, or a user's login), tag ASI03, Identity and Privilege Abuse, whatever else applies.
 
 If no untrusted source reaches a sensitive sink today, do not create a present path finding above `low`; risks that depend on planned changes are forecast findings (rubric section 5a).
 
-When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it.
+When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it. A missing property on an agent that only reads and answers the requester is `low`; it rises only when an affected capability is consequential (writes, deletes, executes, configures, spends, delegates, accesses credentials, or sends data outside the boundary).
 
 ### 8b. STRIDE per element coverage
 

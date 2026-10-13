@@ -36,6 +36,8 @@ OWASP LLM note: the 2026 edition was published August 4, 2026. The LLM column st
 
 For ASI10, A.6.2.4 supplies the documented baseline of intended behavior that makes an agent "rogue" when it departs from it, and its verification criteria should be rerun whenever a forecast trigger fires (clause 8.2). Detecting departure at runtime belongs to operation and monitoring (A.6.2.6).
 
+An agent acting with a person's own credentials (a personal token, a delegated session, or a user's login) is ASI03 whatever else applies, because its actions are attributed to, and authorized as, that person.
+
 SAFE-T1403 Consent-Fatigue Exploit is the technique behind the approval fatigue scoring in `control_decay.md` and the backtests in evals 10 and 11.
 
 ## SAFE-MCP techniques by ASI category

@@ -62,6 +62,14 @@ def sink_class(cap: dict, carried_sensitivity: int) -> int:
     return 0
 
 
+CONSEQUENTIAL_ACTIONS = {"write", "delete", "execute", "configure", "spend", "delegate", "credential_access"}
+
+
+def is_consequential(cap: dict) -> bool:
+    """Rubric section 5a, consequence: the capability changes something or moves data out."""
+    return cap.get("action") in CONSEQUENTIAL_ACTIONS or bool(cap.get("is_egress"))
+
+
 def finding_refs(finding: dict) -> list[str]:
     """The ids a finding is about: its attack path, or for a property finding its affected_refs."""
     if finding.get("finding_kind") == "property":
@@ -94,6 +102,8 @@ def expected_inherent(finding: dict, inputs: dict, caps: dict, autonomy: dict) -
         affected = [caps[r] for r in finding.get("affected_refs", []) if r in caps]
         if not affected:
             return None
+        if not any(is_consequential(c) for c in affected):
+            return "low"  # rubric 0.3.1: a missing property on read and answer capabilities is hygiene
         sink = max(sink_class(c, 0) for c in affected)
         tier = autonomy_shift(BASE_MATRIX["I"][sink], sink, autonomy)
         return tier if RANK[tier] <= RANK["high"] else "high"

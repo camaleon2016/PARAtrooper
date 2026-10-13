@@ -88,11 +88,11 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 
 ### 8. Find attack paths
 
-Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`. **Tag both ends of an attack:** the technique an attacker uses to get in (for injected content, ASI01 and AML.T0051) and the technique that produces the harm (for example, ASI02 and AML.T0086 for exfiltration through a tool). When they differ, include both.
+Load `references/toxic_combinations.md` and follow its search procedure. `toxic_combination` lists element ids from this document, never pattern ids like `TC1`; put the pattern id in the finding title. Tag each finding with `stride`, `agentic_class`, `maestro_layers`, and `threat_refs` from `references/crosswalk.md`. **Tag both ends of an attack:** the technique an attacker uses to get in (for injected content, ASI01 and AML.T0051) and the technique that produces the harm (for example, ASI02 and AML.T0086 for exfiltration through a tool). When they differ, include both. When an agent acts with a person's own credentials (a personal token, a delegated session, or a user's login), tag ASI03, Identity and Privilege Abuse, whatever else applies.
 
 If no untrusted source reaches a sensitive sink today, do not create a present path finding above `low`; risks that depend on planned changes are forecast findings (rubric section 5a).
 
-When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it.
+When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it. A missing property on an agent that only reads and answers the requester is `low`; it rises only when an affected capability is consequential (writes, deletes, executes, configures, spends, delegates, accesses credentials, or sends data outside the boundary).
 
 ### 8b. STRIDE per element coverage
 
@@ -260,6 +260,8 @@ OWASP LLM note: the 2026 edition was published August 4, 2026. The LLM column st
 
 For ASI10, A.6.2.4 supplies the documented baseline of intended behavior that makes an agent "rogue" when it departs from it, and its verification criteria should be rerun whenever a forecast trigger fires (clause 8.2). Detecting departure at runtime belongs to operation and monitoring (A.6.2.6).
 
+An agent acting with a person's own credentials (a personal token, a delegated session, or a user's login) is ASI03 whatever else applies, because its actions are attributed to, and authorized as, that person.
+
 SAFE-T1403 Consent-Fatigue Exploit is the technique behind the approval fatigue scoring in `control_decay.md` and the backtests in evals 10 and 11.
 
 ## SAFE-MCP techniques by ASI category
@@ -373,7 +375,7 @@ Load this file when the design includes MCP servers, A2A peers, or other agent c
 
 # PARA Rubric
 
-Rubric version: 0.3.0. Applies to schema 0.6.x.
+Rubric version: 0.3.1. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -478,6 +480,8 @@ The v0.3.1 eval batch showed why this rule exists: every run kept residual at or
 ## 5a. Property findings
 
 Some risks have no attack path: a missing property such as attributable provenance, a spend or step limit, or a rate limit. Record them as findings with `finding_kind: property`, list the affected capabilities in `affected_refs`, and leave `attack_path` empty.
+
+**Consequence.** A missing property only matters as much as the actions it leaves unchecked. Rate a property finding above `low` only when at least one affected capability is **consequential**: it writes, deletes, executes, configures, spends, delegates, accesses credentials, or sends data outside the trust boundary (`is_egress`). When every affected capability only reads and answers the authenticated requester, the missing property is hygiene, not exposure: rate it `low`. In the v0.4.0 batches, runs on a well controlled Q&A agent rated a missing audit trail `moderate`, which overstated the risk of an agent that changes nothing.
 
 **Precedence.** When every source that could trigger the harm is trusted or internal, and the harm comes from a missing limit or a missing record, use a property finding, not a path finding from the internal source. A path finding from an internal source plus the autonomy modifier would rate it `critical`, which section 5a reserves for complete attack paths from untrusted sources.
 

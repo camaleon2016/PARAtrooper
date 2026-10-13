@@ -1,6 +1,6 @@
 # PARA Rubric
 
-Rubric version: 0.3.0. Applies to schema 0.6.x.
+Rubric version: 0.3.1. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -105,6 +105,8 @@ The v0.3.1 eval batch showed why this rule exists: every run kept residual at or
 ## 5a. Property findings
 
 Some risks have no attack path: a missing property such as attributable provenance, a spend or step limit, or a rate limit. Record them as findings with `finding_kind: property`, list the affected capabilities in `affected_refs`, and leave `attack_path` empty.
+
+**Consequence.** A missing property only matters as much as the actions it leaves unchecked. Rate a property finding above `low` only when at least one affected capability is **consequential**: it writes, deletes, executes, configures, spends, delegates, accesses credentials, or sends data outside the trust boundary (`is_egress`). When every affected capability only reads and answers the authenticated requester, the missing property is hygiene, not exposure: rate it `low`. In the v0.4.0 batches, runs on a well controlled Q&A agent rated a missing audit trail `moderate`, which overstated the risk of an agent that changes nothing.
 
 **Precedence.** When every source that could trigger the harm is trusted or internal, and the harm comes from a missing limit or a missing record, use a property finding, not a path finding from the internal source. A path finding from an internal source plus the autonomy modifier would rate it `critical`, which section 5a reserves for complete attack paths from untrusted sources.
 
