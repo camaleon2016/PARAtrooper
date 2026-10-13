@@ -891,3 +891,15 @@ def test_status_errors_are_not_retried():
     import run_skill  # pylint: disable=import-outside-toplevel
     with pytest.raises(ValueError):
         run_skill.call_with_retries(lambda: (_ for _ in ()).throw(ValueError("400 bad request")), 3, sleep=lambda s: None)
+
+
+def test_missing_property_on_read_and_answer_capabilities_is_low():
+    doc = property_example()
+    f = doc["findings"][-1]
+    f["affected_refs"] = ["cap.crm_read"]  # a read, not egress: hygiene only (rubric 0.3.1)
+    f.update({"inherent_risk": "moderate", "residual_risk": "moderate"})
+    f["forecast"]["projected_risk"] = "moderate"
+    _, warnings = run(doc)
+    assert has(warnings, "f.no_provenance: rubric computes inherent 'low'")
+    _, warnings = run(property_example())  # cap.email_send is egress, so it stays high
+    assert not has(warnings, "f.no_provenance: rubric computes inherent")

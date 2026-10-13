@@ -32,6 +32,8 @@ The first v0.4.0 batch on GPT-5.4 was 29 percent validator clean. Most failures 
 - Precedence rule: when every triggering source is trusted or internal and the harm is a missing limit or record, use a property finding, not a path finding.
 - The "below the floor" error applies from schema 0.6.0; earlier documents keep the warning they were built against.
 - Scorer: `required_threat_ids_any` and `required_evidence_any` let a requirement accept alternatives where the skill's references allow more than one correct answer. Case 12's expectation now accepts ASI10 as well as ASI03 (the crosswalk maps repudiation to ASI10), and common phrasings of the engineer's token. The corrected expectation is applied when scoring every version, so comparisons stay fair.
+- Rubric 0.3.1, section 5a: a property finding is rated above low only when an affected capability is consequential (it writes, deletes, executes, configures, spends, delegates, accesses credentials, or sends data outside the boundary). On the Claude batch, every run on the clean and forecast only designs rated a missing audit trail on a read only Q&A agent moderate, which counted as 6 false positives.
+- SKILL.md and the crosswalk: an agent acting with a person's own credentials is tagged ASI03. Claude's case 12 runs tagged only ASI09 and ASI08.
 
 ## 0.3.5 (2026-10-12)
 
