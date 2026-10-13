@@ -427,8 +427,10 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
                 warnings.append(f"{fid}: rubric computes inherent '{exp}', document says '{f['inherent_risk']}'")
             floor = residual_floor(f, caps, controls)
             if RANK[f["residual_risk"]] < RANK[floor]:
-                errors.append(f"{fid}: residual '{f['residual_risk']}' is below what path controls can justify "
-                              f"('{floor}'); rubric section 5 never allows a residual below the floor")
+                # An error from schema 0.6.0 (rubric 0.3.0); earlier documents keep the warning they targeted.
+                below = (f"{fid}: residual '{f['residual_risk']}' is below what path controls can justify "
+                         f"('{floor}'); rubric section 5 never allows a residual below the floor")
+                (errors if schema_at_least(doc.get("schema_version", "0.0.0"), (0, 6, 0)) else warnings).append(below)
             elif RANK[f["residual_risk"]] > RANK[floor] and not f.get("residual_rationale"):
                 warnings.append(
                     f"{fid}: residual '{f['residual_risk']}' is above the rubric floor ('{floor}') with no "

@@ -837,3 +837,20 @@ def test_older_schema_documents_are_not_held_to_coverage():
     doc["schema_version"] = "0.5.0"
     errors, _ = run(doc)
     assert not has(errors, "stride_coverage")
+
+
+def test_alternative_requirements_score_any_member():
+    exp = {"kind": "coverage", "rating": {"inherent": ["critical"], "residual": ["high"], "forecast": ["critical"]},
+           "required_threat_ids_any": [["ASI03", "ASI01"]],
+           "required_evidence_any": [["no such phrase", "instruction only"]]}
+    assert run_consistency.score_run(example(), exp, SCHEMA)["recall"] == 1.0
+
+
+def test_below_floor_is_a_warning_for_older_schemas():
+    doc = example()
+    del doc["stride_coverage"]
+    doc["schema_version"] = "0.5.0"
+    doc["findings"][0]["residual_risk"] = "low"
+    doc["rating"]["residual"] = "low"
+    errors, warnings = run(doc)
+    assert not has(errors, "below what path controls") and has(warnings, "below what path controls")

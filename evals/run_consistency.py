@@ -8,6 +8,7 @@ Layout:
 Expected file keys: rating ranges, required_paths, required_toxic_combinations,
 required_failing_controls_by_capability, required_threat_ids, required_triggers,
 required_evidence_substrings, required_forecast_findings_min, false_positive_threshold,
+required_threat_ids_any, required_evidence_any,
 required_stride_categories.
 
 Usage:
@@ -77,6 +78,13 @@ def score_run(doc: dict, exp: dict, schema: dict) -> dict:
     req_evidence = exp.get("required_evidence_substrings", [])
     hits += sum(s.lower() in evidence_text for s in req_evidence)
 
+    # Alternatives: each inner list is one requirement, met by any of its members. Used where the
+    # skill's own references allow more than one correct answer (case 12: see its expected notes).
+    any_threats = exp.get("required_threat_ids_any", [])
+    hits += sum(1 for group in any_threats if set(group) & threat_ids)
+    any_evidence = exp.get("required_evidence_any", [])
+    hits += sum(1 for group in any_evidence if any(s.lower() in evidence_text for s in group))
+
     # Forecast only designs must still produce forecast findings (case 08).
     min_forecast = exp.get("required_forecast_findings_min", 0)
     if min_forecast:
@@ -86,6 +94,7 @@ def score_run(doc: dict, exp: dict, schema: dict) -> dict:
         len(req_paths) + len(req_combos) + len(exp.get("required_failing_controls_by_capability", {}))
         + len(exp.get("required_threat_ids", [])) + len(exp.get("required_triggers", []))
         + len(req_evidence) + (1 if min_forecast else 0) + len(req_stride)
+        + len(any_threats) + len(any_evidence)
     )
 
     fp = 0
