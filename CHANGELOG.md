@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.1 (unreleased)
+## 0.4.1 (2026-10-14)
 
 Measured on GPT-5.4 with one repair round: validator clean 79% on the first attempt and 100% after repair, at $0.118 per assessment. Case 09 rescored across versions with the corrected evidence check. See `evals/runs-gpt-54-v041-repair/`.
 
