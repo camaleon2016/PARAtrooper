@@ -147,6 +147,19 @@ def invalid_result(reason: str) -> dict:
     }
 
 
+def first_attempt_valid(path: Path, schema: dict, final_valid: bool) -> bool:
+    """Validity before any repair round: the run_NNN.single.json kept by --repair-rounds, or the
+    run itself when no repair was needed or none was allowed."""
+    single = path.with_name(path.stem + ".single.json")
+    if not single.exists():
+        return final_valid
+    try:
+        doc = json.loads(single.read_text(encoding="utf-8-sig"))
+        return not check(doc, schema)[0]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        return False
+
+
 def score_file(path: Path, exp: dict, schema: dict) -> dict:
     """Score one run file. Unparseable or structurally broken output counts as an invalid run, never
     as a skipped one, so failures cannot quietly raise the averages."""
@@ -157,9 +170,11 @@ def score_file(path: Path, exp: dict, schema: dict) -> dict:
     if not isinstance(doc, dict) or "_parse_error" in doc:
         return invalid_result(str(doc.get("_parse_error", "not an object")) if isinstance(doc, dict) else "not an object")
     try:
-        return score_run(doc, exp, schema)
+        result = score_run(doc, exp, schema)
     except (KeyError, TypeError, AttributeError) as exc:
         return invalid_result(f"malformed: {exc!r}")
+    result["valid_first"] = first_attempt_valid(path, schema, result["valid"])
+    return result
 
 
 def case_stats(results: list[dict]) -> dict:
@@ -173,6 +188,7 @@ def case_stats(results: list[dict]) -> dict:
         stats[k] = {"mode": mode, "agreement": mode_n / n, "in_range": sum(r["in_range"][k] for r in results) / n}
     main = [r.get("main_path_residual") for r in results]
     stats["main_path_residual"] = (Counter(main).most_common(1)[0][1] / n) if any(main) else None
+    stats["valid_first"] = sum(r.get("valid_first", r["valid"]) for r in results) / n
     na = [r["stride_na_rate"] for r in results if r.get("stride_na_rate") is not None]
     stats["stride_na_rate"] = sum(na) / len(na) if na else None
     return stats
@@ -216,6 +232,9 @@ def markdown_report(stats: dict[str, dict], kinds: dict[str, str], meta: dict,
             return sum(s[key] * s["runs"] for s in stats.values()) / total_runs
         lines += ["", f"Overall: {total_runs} runs, validator clean {weighted('valid'):.0%}, "
                       f"mean recall {weighted('recall'):.0%}."]
+        if meta.get("repair_rounds"):
+            lines.append(f"Validator clean on the first attempt, before up to {meta['repair_rounds']} repair round(s): "
+                         f"{weighted('valid_first'):.0%}.")
         na = [s["stride_na_rate"] for s in stats.values() if s.get("stride_na_rate") is not None]
         if na:
             lines.append(f"STRIDE coverage pairs marked not applicable: {sum(na) / len(na):.0%} on average.")

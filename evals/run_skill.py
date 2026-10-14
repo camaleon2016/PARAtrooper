@@ -138,6 +138,35 @@ SMOKE_SET = ["01_support_triage", "02_hr_policy_qa", "08_forecast_only_new_tool"
              "10_backtest_github_mcp", "13_runaway_enrichment_cost"]
 
 
+def as_messages(user) -> list[dict]:
+    """A single user message, or a whole conversation (used by the repair pass)."""
+    return [{"role": "user", "content": user}] if isinstance(user, str) else list(user)
+
+
+REPAIR_ERROR_LIMIT = 40
+
+
+def repair_message(errors: list[str]) -> str:
+    """The follow up a repair round sends. It carries only the validator's own messages, the same
+    output an agent platform shows the model when the skill runs scripts/validate.py, so it cannot
+    leak expected answers."""
+    shown = errors[:REPAIR_ERROR_LIMIT]
+    more = f"\n(and {len(errors) - len(shown)} more)" if len(errors) > len(shown) else ""
+    return ("scripts/validate.py reported these errors in your assessment:\n"
+            + "\n".join(f"- {e}" for e in shown) + more
+            + "\n\nFix every error and return the complete corrected assessment as one JSON object, with no other "
+              "text. Change only what the errors require; do not change ratings or findings unless an error requires it.")
+
+
+def add_usage(total: dict, more: dict) -> dict:
+    """Sum token counts across the first attempt and repair rounds, so cost covers every call."""
+    out = dict(total)
+    for key in ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"):
+        if more.get(key) is not None:
+            out[key] = (out.get(key) or 0) + more[key]
+    return out
+
+
 def call_anthropic(client, model: str, system: str, user: str, max_tokens: int, temperature: float | None,
                    options: dict) -> tuple[str, dict]:
     del options  # no provider specific options for Anthropic yet
@@ -145,7 +174,7 @@ def call_anthropic(client, model: str, system: str, user: str, max_tokens: int, 
         "model": model,
         "max_tokens": max_tokens,
         "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-        "messages": [{"role": "user", "content": user}],
+        "messages": as_messages(user),
     }
     if temperature is not None:
         kwargs["temperature"] = temperature
@@ -169,7 +198,7 @@ def call_openai_compatible(client, model: str, system: str, user: str, max_token
     prompt prefixes automatically can bill it at a discount after the first call."""
     kwargs = {
         "model": model,  # on Azure, the deployment name
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "messages": [{"role": "system", "content": system}] + as_messages(user),
         options.get("token_param", "max_completion_tokens"): max_tokens,
     }
     if temperature is not None:
@@ -232,6 +261,35 @@ def call_with_retries(call, retries: int, wait_seconds: float = 15.0, sleep=None
                   file=sys.stderr)
             (sleep or time.sleep)(wait_seconds * (attempt + 1))
     raise AssertionError("unreachable")
+
+
+def repair(client, args, system, user, text, doc, errors, warnings, meta, options,  # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
+           schema, started, single_path: Path):
+    """Give the model the validator's errors and let it correct them, up to --repair-rounds times.
+    The first attempt is kept as run_NNN.single.json so single shot validity stays measurable."""
+    single_path.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    convo, last_text, rounds = [{"role": "user", "content": user}], text, 0
+    meta = dict(meta, repair={"errors_first": len(errors)})
+    for _ in range(args.repair_rounds):
+        convo += [{"role": "assistant", "content": last_text}, {"role": "user", "content": repair_message(errors)}]
+        rtext, rmeta = call_with_retries(
+            lambda c=list(convo): call_model(client, args.model, system, c, args.max_tokens, args.temperature, options),
+            args.call_retries)
+        meta = add_usage(meta, rmeta)
+        rounds += 1
+        if rmeta.get("stop_reason") == "max_tokens":
+            break
+        try:
+            rdoc = extract_json(rtext)
+        except (ValueError, json.JSONDecodeError):
+            break
+        stamp_metadata(rdoc, started, args.model)
+        doc, last_text = rdoc, rtext
+        errors, warnings = check(doc, schema)
+        if not errors:
+            break
+    meta["repair"].update({"rounds": rounds, "errors_final": len(errors)})
+    return doc, errors, warnings, meta, rounds
 
 
 def make_client(args: argparse.Namespace):
@@ -350,6 +408,7 @@ def write_manifest(args: argparse.Namespace, runs_dir: Path | None = None) -> No
         "started_at": previous.get("started_at", now) if same_batch else now,
         "last_resumed_at": now,
     }
+    manifest["repair_rounds"] = getattr(args, "repair_rounds", 0)
     for key in ("reasoning_effort", "json_mode"):
         if getattr(args, key, None):
             manifest[key] = getattr(args, key)
@@ -379,6 +438,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--reasoning-effort", choices=["low", "medium", "high"],
                     help="for reasoning models on --provider openai; lower is cheaper")
     ap.add_argument("--json-mode", action="store_true", help="ask an OpenAI compatible endpoint for a JSON object")
+    ap.add_argument("--repair-rounds", type=int, default=0,
+                    help="give the model the validator's errors and let it correct them, up to this many times; "
+                    "the first attempt is kept as run_NNN.single.json")
     ap.add_argument("--call-retries", type=int, default=2,
                     help="retries when a connection drops mid response (the SDK does not retry these)")
     ap.add_argument("--max-retries", type=int, default=8,
@@ -465,6 +527,12 @@ def main(argv: list[str] | None = None) -> int:  # pylint: disable=too-many-loca
                 stamp_metadata(doc, started, args.model)
                 errors, warnings = check(doc, schema)
                 status = f"{len(errors)} errors, {len(warnings)} warnings"
+                if errors and args.repair_rounds:
+                    doc, errors, warnings, meta, rounds = repair(
+                        client, args, system, user, text, doc, errors, warnings, meta, options, schema, started,
+                        out_dir / f"run_{i:03d}.single.json")
+                    status = (f"{len(errors)} errors, {len(warnings)} warnings after {rounds} repair round(s); "
+                              f"first attempt had {meta['repair']['errors_first']} errors")
             except (ValueError, json.JSONDecodeError) as exc:
                 doc = {"_parse_error": str(exc)}
                 (out_dir / f"run_{i:03d}.raw.txt").write_text(text, encoding="utf-8")
