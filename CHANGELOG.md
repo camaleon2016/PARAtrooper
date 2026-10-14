@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.4.0 (2026-10-13)
 
 Measured on Claude (3 runs per case) and GPT-5.4 (5 runs per case), with 3 held out cases: Claude passed all four success criteria and GPT-5.4 three; GPT-5.4's validator clean rate fell to 65%, mostly from incomplete STRIDE matrices. See `evals/runs-claude-v040/` and `evals/runs-gpt-54-v040/`.
 
