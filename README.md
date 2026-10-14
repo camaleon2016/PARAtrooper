@@ -128,20 +128,21 @@ Use one `--out` folder per model. Each run records token use and cost in a `run_
 
 ### Across models
 
-The same 13 cases, 5 runs each, with the same rubric and schema, on v0.3.5:
+v0.4.0, 16 cases (13 earlier cases plus 3 held out cases written before v0.4.0 was built), with the same rubric and schema:
 
 | Measure | Claude (claude-sonnet-5) | GPT-5.4 (Azure) |
 |---|---|---|
-| Mean recall | 95% | 93% |
-| Validator clean | 100% | 98% |
-| Runs with a false positive | 2 of 65 | 1 of 65 |
-| GitHub MCP backtest (May 2025): recall, rated critical | 96%, every run | 100%, every run |
-| Supabase MCP backtest (July 2025): recall, rated critical | 80%, every run | 92%, every run |
-| Lowest main path residual agreement | 60% | 60% |
-| Mean output tokens per assessment | 30,309 | 4,413 |
-| Cost per assessment at list prices | about $0.31 | about $0.07 |
+| Runs per case | 3 | 5 |
+| Mean recall, cases 01 to 13 | 97% | 96% |
+| Held out mean recall | 89% | 97% |
+| Validator clean | 98% | 65% |
+| Runs with a false positive | 1 of 48 | 0 of 80 |
+| Main path residual agreement, every case | 100% | 80% or more except one case at 60% |
+| GitHub MCP backtest (May 2025): recall, main path agreement | 100%, 100% | 100%, 100% |
+| Supabase MCP backtest (July 2025): recall, main path agreement | 100%, 100% | 100%, 100% |
+| Mean output tokens per assessment | 43,414 | 5,836 |
 
-Details: [Claude v0.3.5](evals/runs-claude-v035/RESULTS.md) and [notes](evals/runs-claude-v035/RESULTS_NOTES.md); [GPT-5.4 v0.3.5](evals/runs-gpt-54-v035/RESULTS.md) and [notes](evals/runs-gpt-54-v035/RESULTS_NOTES.md). Earlier batches: [Claude v0.3.3](evals/RESULTS.md) and [GPT-5.4 v0.3.4](evals/runs-gpt-54/RESULTS.md).
+GPT-5.4's lower validity comes mostly from incomplete STRIDE coverage matrices in single shot runs; see its notes. Details: [Claude v0.4.0](evals/runs-claude-v040/RESULTS.md) and [notes](evals/runs-claude-v040/RESULTS_NOTES.md); [GPT-5.4 v0.4.0](evals/runs-gpt-54-v040/RESULTS.md) and [notes](evals/runs-gpt-54-v040/RESULTS_NOTES.md). Rounds before the release: [evals/archive/0.4.0-pre/](evals/archive/0.4.0-pre/NOTES.md).
 
 ### By version
 

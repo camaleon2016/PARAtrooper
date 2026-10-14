@@ -2,6 +2,8 @@
 
 ## 0.4.0 (unreleased)
 
+Measured on Claude (3 runs per case) and GPT-5.4 (5 runs per case), with 3 held out cases: Claude passed all four success criteria and GPT-5.4 three; GPT-5.4's validator clean rate fell to 65%, mostly from incomplete STRIDE matrices. See `evals/runs-claude-v040/` and `evals/runs-gpt-54-v040/`.
+
 Schema 0.6.0. Rubric 0.3.0. Implements `design/0.4.0-stride-coverage.md` and the additions the v0.3.x batches exposed on Claude and GPT-5.4. Rating behavior changes, so results are not directly comparable with 0.3.x without the held out cases.
 
 ### Added

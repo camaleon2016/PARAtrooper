@@ -1,0 +1,348 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "14_heldout_mfa_reset_gate-run002",
+    "assessed_at": "2026-10-12T18:04:32Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.5",
+      "rubric_version": "0.2.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "approval queue artifact (as shown to the analyst)"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "helpdesk-agent",
+    "name": "Helpdesk Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.mfa_reset",
+      "tool_ref": "idp.reset_mfa",
+      "action": "credential_access",
+      "target": "user's MFA credential configuration",
+      "data_sensitivity": "restricted",
+      "reversibility": "irreversible",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.analyst_approval",
+      "credential_scope": "broad",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.user_read",
+      "tool_ref": "idp.read_user",
+      "action": "read",
+      "target": "directory profile and group memberships",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.send_temp_pass",
+      "tool_ref": "chat.send_temp_pass",
+      "action": "send_external",
+      "target": "chat message to the ticket requester containing the temporary access pass",
+      "data_sensitivity": "restricted",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.ticket",
+      "source": "Support tickets, including tickets emailed in by contractors and vendors",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.mfa_reset",
+        "cap.user_read",
+        "cap.send_temp_pass"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A2_act_with_approval_on_sensitive",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1-2",
+      "severity": "high",
+      "note": "The instruction to send the temporary access pass to 'the person who opened the ticket' does not require that this person be the account owner, so any external ticket submitter can receive another user's MFA reset credential."
+    },
+    {
+      "issue": "conflicting_directives",
+      "evidence_locator": "prompt.md:3",
+      "severity": "moderate",
+      "note": "The approval requirement is stated as covering 'every reset,' but the design only gates cap.mfa_reset. The subsequent send of the temporary pass (cap.send_temp_pass) executes automatically with no separate approval or destination check, so autonomy for that capability is effectively A3 (act then report) rather than the declared A2."
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.analyst_approval",
+      "name": "Service desk analyst approval in queue tool",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Human decision, independent of model capability. However, it decays functionally with volume: two analysts approve about 400 requests per shift (~200 each), described as mostly routine, producing approval fatigue (SAFE-T1403). The queue also shows only the self-reported requester field and ticket text, with no cross-check against the verified account owner, so even careful raw-action review cannot detect impersonation from the information presented.",
+      "covers": [
+        "cap.mfa_reset"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.8",
+          "framework_edition": "2023"
+        }
+      ],
+      "owner": "Service desk",
+      "approval_review_mode": "raw_action"
+    },
+    {
+      "control_id": "ctl.recipient_binding",
+      "name": "Recipient destination bound to verified account owner record",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. Would bind temp-pass delivery to the account owner's contact information stored in the identity directory, independent of any value supplied in the ticket, so it would not decay with model capability or ticket content.",
+      "covers": [
+        "cap.send_temp_pass",
+        "in.ticket"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.identity_verification",
+      "name": "Out-of-band account owner verification before reset",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. Would require confirming the requester's identity against the account via a channel not controlled by the ticket content (for example, a callback to the phone number on file) before the reset proceeds.",
+      "covers": [
+        "cap.mfa_reset",
+        "in.ticket"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.send_approval_gate",
+      "name": "Explicit approval gate on temp-pass delivery",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. The current gate covers only cap.mfa_reset; cap.send_temp_pass executes automatically afterward with no independent review of the destination.",
+      "covers": [
+        "cap.send_temp_pass"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.volume_monitoring",
+      "name": "Approval volume and fatigue monitoring with high-risk escalation",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented. Would flag high-risk patterns (external or contractor-originated tickets, mismatched requester vs. target, high-privilege accounts) for mandatory secondary review instead of relying on uniform review of roughly 200 requests per analyst per shift.",
+      "covers": [
+        "cap.mfa_reset",
+        "in.ticket"
+      ],
+      "status": "missing_recommended"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f1.mfa_reset_recipient_confusion",
+      "title": "Unverified recipient binding on MFA reset enables account takeover via impersonated ticket (confused deputy, SAFE-T1307 / SAFE-T1403)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.ticket",
+          "note": "An external contractor or vendor emails in a ticket impersonating the target account owner (e.g., claiming device loss and requesting an MFA reset)."
+        },
+        {
+          "ref": "cap.user_read",
+          "note": "Agent looks up the named user to process the ticket."
+        },
+        {
+          "ref": "ctl.analyst_approval",
+          "note": "Analyst sees the target account, the self-reported 'Requested by' field (the attacker's own email), and the ticket text, with nothing to verify that the requester is the account owner; at roughly 200 approvals per analyst per shift described as mostly routine, the request is approved."
+        },
+        {
+          "ref": "cap.mfa_reset",
+          "note": "Agent removes the account's MFA methods and issues a temporary pass."
+        },
+        {
+          "ref": "cap.send_temp_pass",
+          "note": "Agent sends the temporary pass to 'the person who opened the ticket' -- the attacker's email address, not the verified account owner."
+        }
+      ],
+      "toxic_combination": [
+        "in.ticket",
+        "cap.mfa_reset",
+        "cap.send_temp_pass"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1403",
+          "name": "Consent-Fatigue Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "residual_rationale": "The declared control credits mechanically floor at moderate (human approval gate with raw_action review on cap.mfa_reset, step 2 credit: -2 tiers from critical). But the gate only confirms a ticket exists and looks plausible; it does not verify that the requester is the account owner, and it does not gate the temp-pass delivery step at all, so it does not address this path's actual exploitable gap (unverified recipient binding). Combined with roughly 200 approvals per analyst per shift described as 'mostly routine,' approval fatigue (SAFE-T1403) further erodes even raw_action review. Residual is rated high rather than the mechanical moderate floor to reflect that the credited control does not cover the vulnerable step.",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal"
+        ],
+        "failing_controls": [
+          "ctl.analyst_approval"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "The approval-on-sensitive requirement for cap.mfa_reset is removed, narrowed (e.g., auto-approval for 'routine' or repeat requesters), or analysts are given a bulk or fast-track approval option that reduces per-ticket review."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-2",
+          "observation": "Agent sends the temporary access pass to 'the person who opened the ticket' rather than the verified account owner."
+        },
+        {
+          "locator": "approval queue artifact",
+          "observation": "Queue shows Action, Target, a self-reported 'Requested by' field, and the ticket text, with no field verifying that the requester is the target account owner."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Contractors and vendors can email tickets in, and the requester field is simply the email sender; two analysts approve about 400 requests per shift, most routine."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The temporary pass goes to whoever opened the ticket, not to the account owner."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Verify that the ticket requester is the authorized owner of the target account via an out-of-band channel (e.g., a callback to the phone number on file in the directory) before approving any MFA reset.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.8",
+              "framework_edition": "2023"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bind delivery of the temporary access pass to the account owner's verified contact information in the system of record, never to the ticket's self-reported requester field.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add an explicit, separate gate confirming the destination before cap.send_temp_pass executes; do not auto-send immediately after the reset is approved.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Monitor approval volume and flag high-risk patterns (external or contractor-originated tickets, mismatched requester vs. target, high-privilege accounts) for mandatory secondary review, to counter approval fatigue (SAFE-T1403) at roughly 200 approvals per analyst per shift.",
+          "priority": "p2",
+          "audience": "both"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse",
+        "human_trust_exploitation"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure",
+        "L6_security_compliance"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.8",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "The sole finding is a structural account-takeover path: the MFA-reset temporary pass is delivered to the ticket's self-reported requester rather than the verified account owner, and tickets (including those emailed in by contractors) are untrusted input. Inherent risk is critical (untrusted source reaching an irreversible credential-access sink and an irreversible restricted-data egress sink). The one declared control, analyst approval on cap.mfa_reset with raw_action review, earns step 2 credit toward a mechanical floor of moderate, but it neither verifies requester-to-owner binding nor gates the temp-pass send step, and is further undermined by approval volume (~200 requests per analyst per shift, mostly routine). Residual is rated high rather than the mechanical floor to reflect that the credited control does not cover the vulnerable step. If the approval requirement is removed, narrowed, or routed around under autonomy_increase or control_removal, the tier returns to critical."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration described in the provided artifacts, not observed runtime behavior of the deployed agent.",
+    "No MCP/tool manifest, IaC, or identity provider configuration was provided; the agent's actual credential scope for idp.reset_mfa and idp.read_user is inferred from the capability descriptions, not verified against a manifest.",
+    "No data on true approval accuracy or denial rates exists; the figure of 400 requests per shift and the 'mostly routine' framing in the runtime notes is taken as given, not independently measured."
+  ]
+}
