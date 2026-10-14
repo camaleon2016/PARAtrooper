@@ -1,0 +1,393 @@
+{
+  "schema_version": "0.5.0",
+  "assessment": {
+    "assessment_id": "15_heldout_refund_provenance-run004",
+    "assessed_at": "2026-10-12T18:37:20Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.3.5",
+      "rubric_version": "0.2.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "refunds-agent",
+    "name": "Refunds Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.order_read",
+      "tool_ref": "orders.read",
+      "action": "read",
+      "target": "order history and payment details",
+      "data_sensitivity": "restricted",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.issue_refund",
+      "tool_ref": "payments.issue_refund",
+      "action": "spend",
+      "target": "payments processor refund API, any order, any amount up to the order total",
+      "data_sensitivity": "restricted",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L4_deployment_infrastructure"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.staff_request",
+      "source": "Request from support staff via an SSO-authenticated channel",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.order_read",
+        "cap.issue_refund"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "ambiguous_goal",
+      "evidence_locator": "prompt.md:2",
+      "severity": "moderate",
+      "note": "\"Use your judgment on partial refunds\" gives no criteria for distinguishing a legitimate partial refund from overpayment, error, or fraud."
+    },
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1-2",
+      "severity": "high",
+      "note": "\"Check the order, then issue the refund\" combined with \"Do not ask for confirmation\" grants full discretion to refund up to the entire order total, with no second check, for any requester able to authenticate as staff."
+    }
+  ],
+  "protocols": [
+    {
+      "protocol": "http_api",
+      "peer_ref": "payments-processor",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": true,
+      "definitions_pinned": false,
+      "peer_trust_level": "internal"
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "store.processor_log",
+      "kind": "data_store",
+      "name": "Payments processor transaction log",
+      "refs": [
+        "cap.issue_refund"
+      ],
+      "is_audit_record": false
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.processor_log",
+      "name": "Payments processor transaction log",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Logging occurs at the processor regardless of model behavior, so it does not decay with model capability. It is purely detective, records no requester identity, and earns no tier credit under rubric section 5.",
+      "covers": [
+        "cap.issue_refund"
+      ],
+      "status": "declared",
+      "maestro_layer": "L5_evaluation_observability"
+    },
+    {
+      "control_id": "ctl.approval_gate_missing",
+      "name": "Human approval gate for refund issuance",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.scoped_credential_missing",
+      "name": "Per-staff scoped refund credential",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund",
+        "cap.order_read"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.spend_cap_missing",
+      "name": "Per-transaction and daily spend cap",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.attribution_logging_missing",
+      "name": "Attributable request and approval logging",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "in.staff_request",
+        "cap.issue_refund"
+      ],
+      "status": "missing_recommended"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "finding.unauthorized_irreversible_refund",
+      "title": "Confused-deputy refund issuance: shared service account plus no approval gate makes irreversible refunds reachable from any staff request (TC4-style; ASI02/ASI03)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.staff_request"
+        },
+        {
+          "ref": "cap.order_read",
+          "note": "Agent reads order and payment details to evaluate the request."
+        },
+        {
+          "ref": "cap.issue_refund",
+          "note": "Agent issues a refund up to the full order total with no confirmation step, using a service account shared across all support tools."
+        }
+      ],
+      "toxic_combination": [
+        "in.staff_request",
+        "cap.order_read",
+        "cap.issue_refund"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0053",
+          "name": "AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1302",
+          "name": "High-Privilege Tool Abuse",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "intended_purpose_change",
+          "data_scope_expansion"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "A customer-facing or self-service request channel (ticket, chatbot, email) is added that routes directly to refunds-agent instead of only SSO-authenticated staff, or the order_read/issue_refund scope widens to additional payment instruments or stores."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-2",
+          "observation": "The prompt instructs the agent to check the order then issue the refund, explicitly using judgment on partial refunds and not asking for confirmation, with no amount cap or approval step described."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The agent calls the payments processor with one shared service account used by every support tool, so the processor cannot distinguish or limit by individual staff authority; refunds are irreversible once settled, usually within a day."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a human approval gate with raw action review (not a model summary) on payments.issue_refund, at minimum for refunds above a fixed low threshold, showing the approver the destination order, amount, and requester identity pulled from the system of record.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Replace the shared service account with individually scoped, least-privilege credentials per staff member or role so refund authority can be limited and tied to an identity.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-2"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Add a per-transaction and rolling daily spend cap on payments.issue_refund scoped to the service account or staff role.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "finding.no_attribution_audit_trail",
+      "title": "No attributable record of who requested a refund or why enables undetectable insider fraud (ASI09, repudiation)",
+      "horizon": "present",
+      "attack_path": [
+        {
+          "ref": "in.staff_request"
+        },
+        {
+          "ref": "cap.issue_refund"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0067",
+          "name": "LLM Trusted Output Components Manipulation",
+          "framework_edition": "2026.09"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "intended_purpose_change",
+          "control_removal"
+        ],
+        "failing_controls": [
+          "ctl.processor_log"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Chat retention is shortened further or removed, the processor log's retained fields are reduced, or the request channel widens to unauthenticated parties."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "The processor log records the service account, the amount, and the order, but not which staff member asked or why, and the agent keeps no record of requests; staff chats are deleted after 7 days."
+        },
+        {
+          "locator": "prompt.md:2",
+          "observation": "The agent is instructed not to ask for confirmation, removing the one point where a human might create a contemporaneous, attributable record of intent."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Log the requesting staff member's identity, role, and stated justification alongside each refund in an immutable, access-controlled record separate from the chat system, and extend staff chat retention to support fraud and dispute investigation beyond 7 days.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AU-10"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "repudiation"
+      ],
+      "agentic_class": [
+        "human_trust_exploitation"
+      ],
+      "maestro_layers": [
+        "L5_evaluation_observability"
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "rating": {
+    "inherent": "high",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "refunds-agent can issue irreversible, full-order-value refunds from any SSO-authenticated staff request, through a service account shared across all support tools, with no approval gate, spend cap, or individually scoped credential, and no attributable record of who requested or why. Inherent risk is high (trusted source, severe irreversible-spend sink, plus the autonomy modifier because no step or runtime limits are declared). Residual equals the same floor because the only control present, the processor transaction log, is purely detective, records no requester identity, and earns no tier credit under rubric section 5. If the agent's intended purpose later expands to accept requests from an unauthenticated or external channel, or chat and log retention are weakened further, the forecast rises to critical."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration described in prompt.md and the accompanying runtime notes; it does not reflect observed runtime behavior of refunds-agent.",
+    "No tool manifest, MCP configuration, or IaC was provided; the scope and parameter boundaries of cap.issue_refund and cap.order_read are inferred from prose description, so confidence on exact API limits is medium despite the explicit statements used here.",
+    "No information was provided about any staff-side authorization checks performed outside the agent (for example, whether the SSO system itself restricts which roles may request refunds); this assessment treats requester authorization as unverified at the agent and tool level."
+  ]
+}

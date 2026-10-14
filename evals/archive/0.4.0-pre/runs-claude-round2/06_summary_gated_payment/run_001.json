@@ -1,0 +1,683 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "06_summary_gated_payment-run001",
+    "assessed_at": "2026-10-13T05:02:00Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.0",
+      "rubric_version": "0.3.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "approval card (as shown to the clerk)"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "ap-invoice-agent",
+    "name": "AP invoice agent",
+    "trust_domain": "first_party",
+    "model": {
+      "swappable": true
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.vendor_read",
+      "tool_ref": "erp.read_vendor",
+      "action": "read",
+      "target": "ERP vendor master record, including bank account details",
+      "data_sensitivity": "restricted",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.bank_update",
+      "tool_ref": "erp.update_vendor_bank_details",
+      "action": "write",
+      "target": "Vendor bank account/routing number field in ERP vendor master",
+      "data_sensitivity": "restricted",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.clerk_approval",
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.schedule_payment",
+      "tool_ref": "erp.schedule_payment",
+      "action": "spend",
+      "target": "Vendor payment run, scheduled on invoice due date",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "approval_gate_ref": "ctl.clerk_approval",
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.supplier_invoice",
+      "source": "Supplier invoices uploaded to the supplier portal",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A2_act_with_approval_on_sensitive",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:2",
+      "severity": "high",
+      "note": "The instruction directs the agent to update vendor bank details whenever an invoice shows new bank details, with no requirement to verify authenticity through an independent channel and no bound on which vendors or invoice sources this applies to."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:3-4",
+      "severity": "high",
+      "note": "The only safeguard named against fraudulent bank changes or payments is a human approval step driven by a one-line model-written summary; no structural control (destination confirmation, spend cap) is specified."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "ap-invoice-agent",
+      "kind": "process",
+      "name": "AP invoice agent"
+    },
+    {
+      "element_id": "elm.supplier_portal",
+      "kind": "external_entity",
+      "name": "Supplier/portal account submitting invoices (untrusted)",
+      "refs": [
+        "in.supplier_invoice"
+      ]
+    },
+    {
+      "element_id": "elm.invoice_flow",
+      "kind": "data_flow",
+      "name": "Invoice upload flow into agent context",
+      "refs": [
+        "in.supplier_invoice"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "elm.vendor_master",
+      "kind": "data_store",
+      "name": "ERP vendor master record store (includes bank details)",
+      "refs": [
+        "cap.vendor_read",
+        "cap.bank_update"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "elm.payment_flow",
+      "kind": "data_flow",
+      "name": "Payment instruction flow to banking rail",
+      "refs": [
+        "cap.schedule_payment"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "elm.payment_network",
+      "kind": "external_entity",
+      "name": "Recipient bank / payment network",
+      "refs": [
+        "cap.schedule_payment"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.clerk_approval",
+      "name": "Clerk approval card before payment or bank change",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "The approver sees only the model's one-line summary, not the bank account number or change history, so a more persuasive or selectively incomplete summary can pass a fraudulent change (ASI09). At roughly 150 cards/day, approval fatigue further weakens scrutiny.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance",
+      "approval_review_mode": "model_summary",
+      "severs_path": false,
+      "approval_volume": "high",
+      "constrains_sink": false
+    },
+    {
+      "control_id": "ctl.raw_action_review",
+      "name": "Raw-action approval display (bank account number, diff, change history)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented today. If the card showed the raw bank account number, prior value, and change history instead of a summary, approver judgment would not depend on model-generated framing.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "approval_review_mode": "raw_action",
+      "severs_path": false,
+      "constrains_sink": false
+    },
+    {
+      "control_id": "ctl.destination_verification",
+      "name": "Out-of-band verification of new bank details before use",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented today. Verifying new bank details via a callback to a previously known vendor contact (not sourced from the invoice) would make the payment destination independent of attacker-controlled invoice content, regardless of model capability.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "severs_path": true,
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.credential_scoping",
+      "name": "Least-privilege ERP credential (scoped per vendor/transaction)",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented today. The current credential can update any vendor and schedule any payment; scoping it would limit blast radius regardless of model behavior.",
+      "covers": [
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.audit_trail",
+      "name": "Tamper-evident audit log of bank changes and approvals",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented today in a way exposed to review. An append-only, attributable log of who/what requested and approved each bank change and payment would not decay with model capability.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctl.payment_cap",
+      "name": "Per-transaction/per-day spend cap on scheduled payments",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not implemented today. A hard cap with escalation above threshold would narrow exposure regardless of model behavior or approval volume.",
+      "covers": [
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "constrains_sink": true
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "F1-bank-detail-hijack-payment-fraud",
+      "title": "Summary-gated irreversible payment (TC9): invoice-asserted bank details drive fraudulent payment",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.supplier_invoice",
+          "note": "Attacker-controlled or spoofed supplier invoice asserts new bank details"
+        },
+        {
+          "ref": "cap.bank_update",
+          "note": "Agent updates the vendor bank record directly from invoice-asserted details, gated only by a summary-only, high-volume approval"
+        },
+        {
+          "ref": "cap.schedule_payment",
+          "note": "Agent schedules payment to the newly set bank account on the due date"
+        }
+      ],
+      "toxic_combination": [
+        "in.supplier_invoice",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0053",
+          "name": "AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0067",
+          "name": "LLM Trusted Output Components Manipulation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T2104",
+          "name": "Fraudulent Transactions",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1403",
+          "name": "Consent-Fatigue Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "autonomy_increase",
+          "control_removal"
+        ],
+        "failing_controls": [
+          "ctl.clerk_approval"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Model or platform upgrade occurs with no separate review (subject.model.swappable=true); approval volume rises further or the gate is auto-approved/removed; autonomy raised beyond A2."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:2",
+          "observation": "Instruction directs the agent to update the vendor's bank record whenever an invoice shows new bank details, with no independent verification requirement."
+        },
+        {
+          "locator": "approval card (as shown to the clerk)",
+          "observation": "The card shows only a one-line natural-language summary (payee, amount, invoice/PO match) and does not display the bank account number or any change history."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "States the card shows only the model's summary, bank numbers and change history are not shown, the clerk approves roughly 150 cards/day, and the ERP credential can update any vendor and schedule any payment."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Verify any new or changed bank details via an out-of-band channel (callback to a previously known vendor contact, not information from the invoice) before applying cap.bank_update or using the account for cap.schedule_payment.",
+          "priority": "p1",
+          "audience": "both"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Change the approval card to raw-action review: show the actual bank account number, the diff from the prior value, and the change history, not only a one-line summary.",
+          "priority": "p1",
+          "audience": "both"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Scope the ERP credential per vendor/transaction instead of granting broad access to update any vendor and schedule any payment.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "tampering",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse",
+        "human_trust_exploitation"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L6_security_compliance"
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "F2-no-audit-trail-repudiation",
+      "title": "No attributable, tamper-evident record of bank detail changes or payment approvals",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0067",
+          "name": "LLM Trusted Output Components Manipulation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1403",
+          "name": "Consent-Fatigue Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "control_removal",
+          "autonomy_increase"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "No audit/provenance log is added for bank-detail changes and payment approvals before autonomy is increased beyond A2."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "States that bank account numbers and the change history are not shown on the approval card, and no logging or audit mechanism is described elsewhere in the artifacts."
+        },
+        {
+          "locator": "prompt.md:2-4",
+          "observation": "The prompt does not instruct the agent to record who or what requested a bank change or payment, or to attach provenance to the vendor record update."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Implement a tamper-evident audit log of all bank detail changes and payment approvals, attributing each action to the specific agent run and including a reference to it on the approval card.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "repudiation"
+      ],
+      "agentic_class": [
+        "human_trust_exploitation"
+      ],
+      "maestro_layers": [
+        "L6_security_compliance"
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "F3-no-spend-cap-dos",
+      "title": "No spend cap or rate limit on payment scheduling (TC6 spend-loop exposure)",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.schedule_payment"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T2102",
+          "name": "Service Disruption",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "autonomy_increase"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "Growth in invoice/payment volume processed per day or per run without an added spend or rate cap."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "prompt.md:3",
+          "observation": "Instruction says to schedule payment on the due date, with no per-transaction or per-day spend limit mentioned."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Describes clerk approval volume (150/day) and broad ERP credential scope, but no spend cap, rate limit, or step limit for payment scheduling."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Add a per-transaction and per-day spend cap on scheduled payments, with escalation for amounts above a set threshold.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks"
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "ap-invoice-agent",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe the authentication method the agent itself uses when calling ERP APIs (service identity, mTLS, etc.), so the agent's own identity assurance cannot be assessed."
+    },
+    {
+      "element_id": "ap-invoice-agent",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "ERP functions are fixed internal APIs rather than externally supplied, re-definable tool definitions, and autonomy.can_modify_own_config is false, so there is no self-tampering vector distinct from F1."
+    },
+    {
+      "element_id": "ap-invoice-agent",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "F2-no-audit-trail-repudiation"
+      ]
+    },
+    {
+      "element_id": "ap-invoice-agent",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "No path exists where invoice-supplied content causes the agent to disclose data to an attacker-controlled output channel; the identified risk is fraud via tampering, not disclosure."
+    },
+    {
+      "element_id": "ap-invoice-agent",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "F3-no-spend-cap-dos"
+      ]
+    },
+    {
+      "element_id": "ap-invoice-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "F1-bank-detail-hijack-payment-fraud"
+      ]
+    },
+    {
+      "element_id": "elm.supplier_portal",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "F1-bank-detail-hijack-payment-fraud"
+      ]
+    },
+    {
+      "element_id": "elm.supplier_portal",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe whether supplier portal submissions are authenticated or logged with a non-repudiable identity for the submitting account."
+    },
+    {
+      "element_id": "elm.payment_network",
+      "category": "spoofing",
+      "status": "not_applicable",
+      "rationale": "The payment network's identity is fixed by banking rail routing; the real risk is an attacker-controlled account number, which is captured under tampering in F1, not impersonation of the network."
+    },
+    {
+      "element_id": "elm.payment_network",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe whether the payment network returns confirmations tied to attributable transaction records beyond the ERP's own log."
+    },
+    {
+      "element_id": "elm.invoice_flow",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "F1-bank-detail-hijack-payment-fraud"
+      ]
+    },
+    {
+      "element_id": "elm.invoice_flow",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "This flow carries supplier-submitted data into the agent; it does not carry outbound agent data, so it is not a disclosure path."
+    },
+    {
+      "element_id": "elm.invoice_flow",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state whether invoice upload volume at the portal is rate limited."
+    },
+    {
+      "element_id": "elm.payment_flow",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "F1-bank-detail-hijack-payment-fraud"
+      ]
+    },
+    {
+      "element_id": "elm.payment_flow",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "The intended recipient of this flow is the vendor's bank; the disclosure-relevant risk is wrong-destination bank details, already covered by the tampering finding F1."
+    },
+    {
+      "element_id": "elm.payment_flow",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "F3-no-spend-cap-dos"
+      ]
+    },
+    {
+      "element_id": "elm.vendor_master",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "F1-bank-detail-hijack-payment-fraud"
+      ]
+    },
+    {
+      "element_id": "elm.vendor_master",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe field-level access controls on vendor master data beyond the broad ERP credential scope."
+    },
+    {
+      "element_id": "elm.vendor_master",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "A data store holding vendor records is not subject to a denial-of-service distinct from the ERP platform's own availability, which is out of scope of this design review."
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "The design lets an untrusted supplier invoice drive a bank-account change and a subsequent irreversible payment (S3 sink), which is inherently critical. The only control, a clerk approval gate, is partially capability-dependent and shown only a one-line model summary at high volume (about 150 cards/day), so residual credit is limited to one tier, giving a residual of high. Because the model is upgraded with the platform with no separate review, and the gate's weakness (model_summary + high volume) is exactly the class the model_upgrade and autonomy_increase triggers defeat, the forecast returns to critical with that control named as failing. Two property gaps compound this: no attributable audit trail for bank changes/approvals (repudiation) and no spend or rate cap on payments (denial of service / spend-loop), each rated high and unresolved by any declared control."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in prompt.md, the approval card, and the runtime notes, not observed runtime behavior.",
+    "No MCP config, IaC, or source code was provided; capability scope (credential_scope broad, data sensitivity) is inferred from the runtime notes and prompt, not verified against a live ERP configuration.",
+    "No information on invoice portal authentication, logging, or rate limiting was provided, which limits confidence in the likelihood estimates for F1 and F3."
+  ]
+}

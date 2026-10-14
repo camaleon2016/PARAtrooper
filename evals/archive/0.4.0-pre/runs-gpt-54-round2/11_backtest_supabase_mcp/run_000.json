@@ -1,0 +1,844 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "11_backtest_supabase_mcp-run000",
+    "assessed_at": "2026-10-13T00:41:11Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.0",
+      "rubric_version": "0.3.0",
+      "model": "gpt-5.4"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "mcp_config",
+        "locator": "artifacts:configuration"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "artifacts:runtime notes"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "artifacts:stable ids and agent design under review"
+      }
+    ],
+    "assessment_reason": "on_request"
+  },
+  "subject": {
+    "agent_id": "ide-db-agent",
+    "name": "IDE DB Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.sql_read",
+      "tool_ref": "supabase.execute_sql",
+      "action": "read",
+      "target": "Supabase database via service role; includes support data and integration tokens table",
+      "data_sensitivity": "restricted",
+      "reversibility": "reversible",
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem",
+      "approval_gate_ref": "ctl.tool_call_prompt"
+    },
+    {
+      "capability_id": "cap.sql_write_reply",
+      "tool_ref": "supabase.execute_sql",
+      "action": "send_external",
+      "target": "insert into support_messages visible to the customer through support widget",
+      "data_sensitivity": "restricted",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem",
+      "approval_gate_ref": "ctl.tool_call_prompt"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.developer_request",
+      "source": "Developer prompt in IDE",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ]
+    },
+    {
+      "input_id": "in.ticket_message",
+      "source": "Customer-written ticket messages from public support widget",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A1_act_with_approval_each_step",
+    "max_unattended_steps": 1,
+    "max_runtime_minutes": 30,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "protocols": [
+    {
+      "protocol": "mcp",
+      "peer_ref": "peer.supabase_mcp",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "untrusted",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1004",
+          "name": "Server Impersonation / Name-Collision",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "ide-db-agent",
+      "kind": "process",
+      "name": "IDE DB Agent",
+      "refs": [
+        "ide-db-agent"
+      ]
+    },
+    {
+      "element_id": "el.flow.developer_request",
+      "kind": "data_flow",
+      "name": "Developer request flow into agent",
+      "refs": [
+        "in.developer_request"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "el.flow.ticket_message",
+      "kind": "data_flow",
+      "name": "Customer ticket message flow into agent",
+      "refs": [
+        "in.ticket_message"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.ext.customer",
+      "kind": "external_entity",
+      "name": "Customer support widget user"
+    },
+    {
+      "element_id": "el.flow.reply_egress",
+      "kind": "data_flow",
+      "name": "Reply written to support_messages and shown to customer",
+      "refs": [
+        "cap.sql_write_reply"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.store.database",
+      "kind": "data_store",
+      "name": "Supabase database holding tickets and integration tokens",
+      "refs": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ]
+    },
+    {
+      "element_id": "el.store.audit",
+      "kind": "data_store",
+      "name": "Client approval and tool-call record",
+      "is_audit_record": true
+    },
+    {
+      "element_id": "peer.supabase_mcp",
+      "kind": "external_entity",
+      "name": "Supabase MCP server"
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.tool_call_prompt",
+      "name": "Client tool call approval prompt",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "The developer approves many calls in a session, and the prompt is an IDE-mediated review step rather than a dedicated low-volume control. Approval fatigue lowers effectiveness, and a stronger model can present more persuasive sequences of SQL requests; per control_decay.md this decays under autonomy_increase and model framing weaknesses.",
+      "covers": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "high",
+      "constrains_sink": false
+    },
+    {
+      "control_id": "ctl.scoped_db_credential",
+      "name": "Scoped database credential instead of service role",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "constrains_sink": true,
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AC-6"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        }
+      ]
+    },
+    {
+      "control_id": "ctl.reply_recipient_binding",
+      "name": "Bind reply destination and row to the developer-selected ticket record; disallow arbitrary SQL inserts",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks",
+      "constrains_sink": true,
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AC-3"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        }
+      ]
+    },
+    {
+      "control_id": "ctl.mcp_pinning",
+      "name": "Pin and verify MCP server package version and tool definitions",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "peer.supabase_mcp"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L7_agent_ecosystem",
+      "constrains_sink": false,
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "SR-4"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.10"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f.tc1_ticket_to_reply_exfil",
+      "title": "Lethal trifecta (TC1): customer ticket content can steer service-role SQL read and exfiltrate restricted data back to the customer-visible support_messages sink",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.ticket_message",
+          "note": "Untrusted customer-authored content enters ticket context."
+        },
+        {
+          "ref": "cap.sql_read",
+          "note": "execute_sql can read restricted data with service role and bypasses row level security."
+        },
+        {
+          "ref": "cap.sql_write_reply",
+          "note": "execute_sql can insert a reply row visible to the same customer."
+        }
+      ],
+      "toxic_combination": [
+        "in.ticket_message",
+        "cap.sql_read",
+        "cap.sql_write_reply",
+        "ctl.tool_call_prompt"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051",
+          "name": "LLM Prompt Injection",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1102",
+          "name": "Prompt Injection (Multiple Vectors)",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1914",
+          "name": "Tool-to-Tool Exfil",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal",
+          "model_upgrade"
+        ],
+        "failing_controls": [
+          "ctl.tool_call_prompt"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Any reduction in per-call approval, remembered approvals, or higher IDE approval volume; model/version change in client configuration."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "Customers write ticket messages through the public support widget, so ticket content is untrusted and attacker-authorable."
+        },
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "The database connection uses the service role, which bypasses row level security, and a table of integration tokens sits in the same database."
+        },
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "Rows in support_messages are shown back to the customer, so insert into support_messages is an attacker-readable egress path."
+        },
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "The IDE client asks the developer to approve each tool call and developers approve many calls in a session, so the approval gate is high volume."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Replace the service-role connection with a least-privilege credential scoped away from integration tokens and unrestricted ticket reads.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            },
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Replace arbitrary execute_sql reply writes with a bound reply action that can only post to the developer-selected ticket and cannot include data from unrelated rows or token tables.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-3"
+            },
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "information_disclosure",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "goal_manipulation",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f.tc4_confused_deputy_service_role",
+      "title": "Confused deputy (TC4): developer request can invoke service-role SQL that exceeds the developer's own data authority",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.developer_request",
+          "note": "Trusted developer asks for ticket review."
+        },
+        {
+          "ref": "cap.sql_read",
+          "note": "Read executes with service role and bypasses row level security."
+        }
+      ],
+      "toxic_combination": [
+        "in.developer_request",
+        "cap.sql_read",
+        "ctl.tool_call_prompt"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0083",
+          "name": "Credentials from AI Agent Configuration",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "moderate",
+      "residual_risk": "low",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal",
+          "data_scope_expansion"
+        ],
+        "failing_controls": [
+          "ctl.tool_call_prompt"
+        ],
+        "projected_risk": "moderate",
+        "watch_signal": "Approval gate removal, broader database grants, or additional sensitive tables added to the same service-role scope."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "The database connection uses the service role, which bypasses row level security."
+        },
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "A table of integration tokens sits in the same database, increasing the impact of over-broad credential scope."
+        },
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "The IDE client asks the developer to approve each tool call, but developers approve many calls in a session, so the gate is present but high volume."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Use a user-scoped or least-privilege database role for ticket triage and isolate integration tokens from agent-readable tables.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        }
+      ],
+      "likelihood": "unlikely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f.asi04_unpinned_supabase_mcp",
+      "title": "ASI04: Supabase MCP server is unpinned and identity is not verified, enabling server impersonation or tool-definition tampering",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "peer.supabase_mcp",
+          "note": "Remote MCP server package is fetched as latest and identity is not verified."
+        },
+        {
+          "ref": "cap.sql_read",
+          "note": "Poisoned definitions can influence high-privilege SQL reads."
+        },
+        {
+          "ref": "cap.sql_write_reply",
+          "note": "Poisoned definitions can steer customer-visible writes."
+        }
+      ],
+      "toxic_combination": [
+        "peer.supabase_mcp",
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0010.005",
+          "name": "AI Supply Chain Compromise: AI Agent Tool",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0115.002",
+          "name": "Publish Poisoned AI Artifacts: AI Agent Tools",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1004",
+          "name": "Server Impersonation / Name-Collision",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "new_mcp_server",
+          "control_removal",
+          "model_upgrade"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "Any MCP config diff, package version change, or addition of new remote MCP servers should trigger reassessment."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "artifacts:configuration",
+          "observation": "The MCP server is launched with @supabase/mcp-server-supabase@latest, so the package version is not pinned."
+        },
+        {
+          "locator": "artifacts:configuration",
+          "observation": "Authentication is via an access token, but the design provides no evidence of peer identity verification for the remote server."
+        },
+        {
+          "locator": "artifacts:runtime notes",
+          "observation": "The server can reach service-role SQL reads and customer-visible writes, so tool-definition tampering would have high impact."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pin the MCP package version, hash or otherwise pin reviewed tool definitions, and verify remote server identity before exposing high-privilege SQL tools.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SR-4"
+            },
+            {
+              "framework": "ISO_42001",
+              "id": "A.10"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "tampering"
+      ],
+      "agentic_class": [],
+      "maestro_layers": [
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MAP 4.1",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.10",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "ide-db-agent",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not describe developer authentication to the IDE client or whether agent identity can be impersonated."
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f.asi04_unpinned_supabase_mcp"
+      ]
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "repudiation",
+      "status": "mitigated",
+      "control_ids": [
+        "ctl.tool_call_prompt"
+      ]
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f.tc1_ticket_to_reply_exfil"
+      ]
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The design shows a per-call approval gate and no autonomous looping, spend capability, or delegation path that would create a meaningful DoS condition."
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "f.tc1_ticket_to_reply_exfil",
+        "f.tc4_confused_deputy_service_role"
+      ]
+    },
+    {
+      "element_id": "el.flow.ticket_message",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f.tc1_ticket_to_reply_exfil"
+      ]
+    },
+    {
+      "element_id": "el.flow.ticket_message",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "This inbound flow brings customer-authored content into the agent; the primary risk on this boundary is injected tampering, not disclosure from the flow itself."
+    },
+    {
+      "element_id": "el.flow.ticket_message",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "No artifact indicates bulk ticket ingestion, recursive processing, or other characteristics that would make this external inbound flow a DoS vector in this design."
+    },
+    {
+      "element_id": "el.flow.reply_egress",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f.tc1_ticket_to_reply_exfil"
+      ]
+    },
+    {
+      "element_id": "el.flow.reply_egress",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f.tc1_ticket_to_reply_exfil"
+      ]
+    },
+    {
+      "element_id": "el.flow.reply_egress",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The reply egress is a single record insert path and the provided design does not show mass outbound delivery or queue saturation behavior."
+    },
+    {
+      "element_id": "el.ext.customer",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not describe authentication or anti-impersonation controls on the public support widget."
+    },
+    {
+      "element_id": "el.ext.customer",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not say whether customer submissions are attributable to a verified identity or are only session based."
+    },
+    {
+      "element_id": "el.store.database",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f.asi04_unpinned_supabase_mcp"
+      ]
+    },
+    {
+      "element_id": "el.store.database",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f.tc1_ticket_to_reply_exfil",
+        "f.tc4_confused_deputy_service_role"
+      ]
+    },
+    {
+      "element_id": "el.store.database",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "No write-heavy autonomous loop, delete capability, or query amplification behavior is described that would make the database availability a primary risk here."
+    },
+    {
+      "element_id": "el.store.audit",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The design mentions approval prompts but does not say whether the resulting approval records are tamper-evident or protected from modification."
+    },
+    {
+      "element_id": "el.store.audit",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not say whether audit records contain SQL payloads or secrets, nor who can read them."
+    },
+    {
+      "element_id": "el.store.audit",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The assessment depends on existence of the record, but the design does not indicate that loss of audit-store availability drives the main risk outcomes under review."
+    },
+    {
+      "element_id": "el.store.audit",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "The artifacts mention the client approval prompt but do not confirm whether action provenance separates agent actions from the human approver in a durable audit record."
+    },
+    {
+      "element_id": "peer.supabase_mcp",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "f.asi04_unpinned_supabase_mcp"
+      ]
+    },
+    {
+      "element_id": "peer.supabase_mcp",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "The design does not state whether the MCP server's actions or definition changes are attributable to a verified publisher or operator."
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Highest present inherent risk is the TC1 path from untrusted ticket content to service-role SQL read and customer-visible write, which is critical by the U-to-S3 base matrix. The only declared preventive control on the path is a high-volume raw-action approval gate, which earns one-tier step-2 credit and leaves residual high. Forecast returns to critical if approval is weakened or removed. Separate high present risk also exists from the unpinned and unverified MCP supply chain path. Manual validation applied because scripts could not be run."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration artifacts provided here, not observed runtime behavior.",
+    "No system prompt, tool schema, MCP tools/list output, source code, or runtime logs were provided, so instruction-level issues, exact tool definitions, and actual approval UX details could not be verified.",
+    "The assessment infers the Supabase MCP exposure from configuration and runtime notes; confidence would increase with the reviewed tool manifest and a captured approval dialog."
+  ]
+}

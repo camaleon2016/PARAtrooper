@@ -1,0 +1,708 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "11_backtest_supabase_mcp-run002",
+    "assessed_at": "2026-10-13T06:52:40Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.0",
+      "rubric_version": "0.3.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "mcp_config",
+        "locator": "configuration: mcpServers.supabase"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "ide-db-agent",
+    "name": "IDE database agent (Supabase MCP)",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.sql_read",
+      "tool_ref": "supabase.execute_sql (read)",
+      "action": "read",
+      "target": "Postgres database via service-role execute_sql, bypassing row level security; includes an integration_tokens table",
+      "data_sensitivity": "restricted",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.tool_call_prompt",
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.sql_write_reply",
+      "tool_ref": "supabase.execute_sql (insert)",
+      "action": "write",
+      "target": "support_messages table rows, rendered back to the customer in the support UI",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "approval_gate_ref": "ctl.tool_call_prompt",
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.developer_request",
+      "source": "Developer's direct prompt in the IDE chat ('Show me the latest open support tickets')",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ]
+    },
+    {
+      "input_id": "in.ticket_message",
+      "source": "Customer-submitted ticket message via the public support widget, later retrieved into agent context when tickets are read",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A1_act_with_approval_each_step",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "protocols": [
+    {
+      "protocol": "mcp",
+      "peer_ref": "mcp.supabase_server",
+      "direction": "bidirectional",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "trusted",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "ide-db-agent",
+      "kind": "process",
+      "name": "IDE database agent",
+      "refs": [
+        "ide-db-agent"
+      ]
+    },
+    {
+      "element_id": "mcp.supabase_server",
+      "kind": "process",
+      "name": "Supabase MCP server (npx @latest)",
+      "refs": [
+        "mcp.supabase_server"
+      ]
+    },
+    {
+      "element_id": "el.database",
+      "kind": "data_store",
+      "name": "Supabase/Postgres database (includes integration_tokens and support_messages tables)",
+      "refs": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "el.customer",
+      "kind": "external_entity",
+      "name": "Customer using the public support widget"
+    },
+    {
+      "element_id": "el.flow_ticket_ingress",
+      "kind": "data_flow",
+      "name": "Customer ticket message ingress into the database",
+      "refs": [
+        "in.ticket_message"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.flow_reply_egress",
+      "kind": "data_flow",
+      "name": "Agent write of reply/query content into support_messages, rendered to the customer",
+      "refs": [
+        "cap.sql_write_reply"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.flow_developer_request",
+      "kind": "data_flow",
+      "name": "Developer prompt entering the agent within the IDE session",
+      "refs": [
+        "in.developer_request"
+      ],
+      "crosses_boundary": false
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.tool_call_prompt",
+      "name": "IDE client per-call tool invocation approval prompt",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The IDE shows the raw SQL for each call and requires developer approval before execution, enforced by the client outside the model; this does not weaken as model capability grows, but its practical effectiveness depends on approval volume (approval fatigue), not model capability.",
+      "covers": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "high"
+    },
+    {
+      "control_id": "ctl.scoped_db_role",
+      "name": "Least-privilege, RLS-respecting database role for ticket-driven queries",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A properly scoped credential does not decay with model capability; restricting the role's access excludes sensitive tables such as integration_tokens regardless of what the model is instructed to do.",
+      "covers": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctl.output_dlp_filter",
+      "name": "Outbound DLP filter on writes to customer-visible tables",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "A pattern-based filter enforced outside the model can catch obvious secret formats, but encoded or paraphrased secrets can get past it as the model becomes more capable at evading pattern matches; it narrows rather than severs the path.",
+      "covers": [
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "ctl.pin_server_version",
+      "name": "Pin and hash the Supabase MCP server package version",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Version pinning and hash verification enforced at install time do not depend on model behavior; they prevent a silently updated or poisoned server package from being loaded regardless of what the model does.",
+      "covers": [
+        "mcp.supabase_server"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.query_rate_limit",
+      "name": "Row/size/rate limit on execute_sql calls",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A hard limit enforced at the database or proxy layer does not depend on model behavior; it narrows the blast radius of any single approved call but does not make the sink unreachable.",
+      "covers": [
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "control_id": "ctl.audit_log",
+      "name": "Append-only audit log of executed SQL and approving developer",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "An append-only log enforced outside the model does not decay with model capability; it earns no tier credit (detective only) but supports accountability if reviewed.",
+      "covers": [
+        "ide-db-agent",
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "finding.lethal_trifecta",
+      "title": "Lethal trifecta via service-role confused deputy (TC1 + TC4): injected ticket content can drive a service-role read of integration tokens and an exfiltrating write back to the customer",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.ticket_message",
+          "note": "Customer submits a ticket containing attacker-crafted text, potentially including instructions aimed at the agent."
+        },
+        {
+          "ref": "cap.sql_read",
+          "note": "A benign developer request causes execute_sql to run with the service role, returning ticket content into context and able to reach other tables such as integration_tokens, bypassing RLS."
+        },
+        {
+          "ref": "cap.sql_write_reply",
+          "note": "Agent inserts a reply (potentially containing exfiltrated data) into support_messages, which is rendered back to the customer, completing exfiltration to the attacker."
+        }
+      ],
+      "toxic_combination": [
+        "in.ticket_message",
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051",
+          "name": "LLM Prompt Injection",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1104",
+          "name": "Over-Privileged Tool Abuse",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal"
+        ],
+        "failing_controls": [
+          "ctl.tool_call_prompt"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "IDE config changes to auto-approve or batch-approve tool calls, the approval gate disabled or bypassed, or autonomy raised beyond per-step approval."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes (paragraph 1)",
+          "observation": "The database connection uses the service role, which bypasses row level security, and a table of integration tokens sits in the same database."
+        },
+        {
+          "locator": "runtime notes (paragraph 2)",
+          "observation": "Customers write ticket messages through the public support widget, and rows in support_messages are shown back to the customer, creating an attacker-readable egress channel."
+        },
+        {
+          "locator": "runtime notes (paragraph 3)",
+          "observation": "The IDE client asks the developer to approve each tool call and shows the SQL, but developers approve many calls in a session, indicating high approval volume and fatigue risk."
+        },
+        {
+          "locator": "runtime notes (developer prompt)",
+          "observation": "The developer's innocuous request 'Show me the latest open support tickets' causes the agent to read ticket content using the service-role execute_sql capability."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Use a row-level-security-respecting, least-privilege database role for any query path that can be influenced by customer-submitted content (ticket reads and replies); reserve the service-role key for explicit, developer-only administrative actions outside this path.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add an outbound data-loss-prevention check before writing query results into customer-visible support_messages rows, blocking secret-like patterns such as tokens and keys.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-7"
+            }
+          ]
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Add a row/size/rate limit on execute_sql reads and writes to bound the blast radius of any single approved call.",
+          "priority": "p2",
+          "audience": "developer"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Log every executed SQL statement together with the approving developer identity in an append-only audit store separate from the IDE session.",
+          "priority": "p2",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AU-10"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Tag ticket message content retrieved from the database as untrusted data in the agent's context (spotlighting) so the model is less likely to treat embedded text as instructions.",
+          "priority": "p3",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "information_disclosure",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L3_agent_frameworks",
+        "L6_security_compliance"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "finding.supply_chain_unpinned_mcp",
+      "title": "Unpinned Supabase MCP server install ('@latest') leaves tool definitions and credentials open to a rug pull",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "mcp.supabase_server",
+        "cap.sql_read",
+        "cap.sql_write_reply"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0115.002",
+          "name": "Publish Poisoned AI Artifacts: AI Agent Tools",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "new_mcp_server"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "The Supabase MCP server package publishes a new version under the same @latest tag, or a similarly named package appears, and npx fetches a different artifact than previously used without any version change being reviewed."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "configuration (mcpServers.supabase.args)",
+          "observation": "The Supabase MCP server is invoked via 'npx -y @supabase/mcp-server-supabase@latest', using the @latest tag with no version pin or hash verification."
+        },
+        {
+          "locator": "configuration (mcpServers.supabase.args)",
+          "observation": "The server is granted an access token (${SUPABASE_PAT}) used for all database operations, so a poisoned server version would gain that credential."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pin the Supabase MCP server package to a specific version and verify its hash before each session instead of using the @latest tag.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SR-3"
+            }
+          ]
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Monitor for unexpected changes in the installed MCP server's tool list or schemas between sessions.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "tampering"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.10"
+        },
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MAP 4.1"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "ide-db-agent",
+      "category": "spoofing",
+      "status": "not_applicable",
+      "rationale": "The agent runs as a single developer-invoked IDE process per session; there is no separate caller identity within this design that could be spoofed."
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe any audit log of executed SQL tool calls distinct from the per-call IDE approval prompts."
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state a step, row, or spend limit for execute_sql calls beyond requiring developer approval per call."
+    },
+    {
+      "element_id": "ide-db-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "mcp.supabase_server",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "finding.supply_chain_unpinned_mcp"
+      ]
+    },
+    {
+      "element_id": "mcp.supabase_server",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "finding.supply_chain_unpinned_mcp"
+      ]
+    },
+    {
+      "element_id": "mcp.supabase_server",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe logging of the MCP server process's own actions separate from agent tool calls."
+    },
+    {
+      "element_id": "mcp.supabase_server",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "mcp.supabase_server",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state any rate limiting enforced by or on the MCP server process."
+    },
+    {
+      "element_id": "mcp.supabase_server",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "el.database",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "el.database",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "el.database",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe query timeouts, connection limits, or storage quotas for the database."
+    },
+    {
+      "element_id": "el.customer",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe how customers are authenticated on the public support widget, so it is unclear whether a submitter's identity can be forged."
+    },
+    {
+      "element_id": "el.customer",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe whether ticket submissions are attributable to a verified customer account or session."
+    },
+    {
+      "element_id": "el.flow_ticket_ingress",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "el.flow_ticket_ingress",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "This inbound flow carries customer-authored text into the database; it does not itself move data out of the trust boundary, so outward disclosure does not apply to the ingress direction."
+    },
+    {
+      "element_id": "el.flow_ticket_ingress",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe rate limiting on ticket submissions through the public support widget."
+    },
+    {
+      "element_id": "el.flow_reply_egress",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "el.flow_reply_egress",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "finding.lethal_trifecta"
+      ]
+    },
+    {
+      "element_id": "el.flow_reply_egress",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe a limit on the volume or size of data written back into support_messages per call."
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Inherent risk reaches critical because an untrusted, customer-authored ticket message can reach a service-role database read that bypasses row-level security (including a table of integration tokens) and a customer-visible write capability, forming a complete lethal-trifecta attack path (TC1) compounded by a confused-deputy privilege issue (TC4). The only control in place, a per-call IDE approval prompt, is structural and shows raw SQL (independent of model capability) but is undermined by high approval volume (approval fatigue, ASI09 / SAFE-T1403), holding residual at high rather than lower. A second, independent finding notes that the Supabase MCP server is pulled unpinned via '@latest', a present supply-chain gap (ASI04) that could let a poisoned server bypass the approval gate entirely if exploited; it is capped at high as a property finding. Both findings forecast to critical if the approval gate is weakened further (autonomy increase or removal) or if a malicious server version is published, since neither trigger leaves any effective control in place. The single highest-leverage fix is replacing the service-role credential with a least-privilege, RLS-respecting role for ticket-driven queries."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in the provided artifacts, not observed runtime behavior.",
+    "No system prompt or agent instructions were provided; the agent's goal-handling behavior is inferred only from the runtime notes, which lowers confidence on instruction-related findings.",
+    "Exact table schema is not provided beyond naming support_messages and an integration tokens table; the 'restricted' sensitivity assigned to integration tokens is inferred from its description as credential data.",
+    "No logging or audit configuration is described; repudiation and denial-of-service properties are marked not_assessed rather than findings because the artifacts do not state whether they exist."
+  ]
+}

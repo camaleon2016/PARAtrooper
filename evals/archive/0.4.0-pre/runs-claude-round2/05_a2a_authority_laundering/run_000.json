@@ -1,0 +1,975 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "05_a2a_authority_laundering-run000",
+    "assessed_at": "2026-10-13T04:32:54Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.0",
+      "rubric_version": "0.3.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "agent_card",
+        "locator": "payments-agent agent card (consumed by orchestrator)"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "procurement-orchestrator",
+    "name": "Procurement orchestrator",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.vendor_list_read",
+      "action": "read",
+      "target": "approved vendor list",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.delegate_payment",
+      "tool_ref": "payments-agent.pay_vendor (A2A)",
+      "action": "delegate",
+      "target": "payments-agent",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.purchase_request",
+      "source": "Employee purchase request submitted via SSO-authenticated channel",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.vendor_list_read",
+        "cap.delegate_payment"
+      ]
+    },
+    {
+      "input_id": "in.vendor_quote",
+      "source": "Vendor quote emails and attachments received from outside the company",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.delegate_payment"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:3",
+      "severity": "high",
+      "note": "The constraint 'Only pay vendors on the approved list' is enforced purely by model instruction and checks vendor identity only, not the bank account details actually used for payment."
+    },
+    {
+      "issue": "implied_authority",
+      "evidence_locator": "prompt.md:4",
+      "severity": "moderate",
+      "note": "The prompt assumes payments-agent performs further checks ('Payments-agent will handle any remaining checks'), but runtime notes show payments-agent trusts any task from the orchestrator's bearer token unconditionally, so no real downstream verification exists."
+    }
+  ],
+  "protocols": [
+    {
+      "protocol": "a2a",
+      "peer_ref": "payments-agent",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "internal",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1004",
+          "name": "Server Impersonation / Name-Collision",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0073",
+          "name": "Impersonation",
+          "framework_edition": "2026.09"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "procurement-orchestrator",
+      "kind": "process",
+      "name": "Procurement orchestrator agent"
+    },
+    {
+      "element_id": "payments-agent",
+      "kind": "process",
+      "name": "payments-agent (A2A peer)"
+    },
+    {
+      "element_id": "el.vendor_list_store",
+      "kind": "data_store",
+      "name": "Approved vendor list",
+      "refs": [
+        "cap.vendor_list_read"
+      ]
+    },
+    {
+      "element_id": "el.approval_audit_store",
+      "kind": "data_store",
+      "name": "Manager approval record",
+      "is_audit_record": true,
+      "refs": [
+        "ctl.manager_approval"
+      ]
+    },
+    {
+      "element_id": "el.quote_email_flow",
+      "kind": "data_flow",
+      "name": "Inbound vendor quote email",
+      "refs": [
+        "in.vendor_quote"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.delegate_payment_flow",
+      "kind": "data_flow",
+      "name": "A2A delegation to payments-agent",
+      "refs": [
+        "cap.delegate_payment"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.purchase_request_flow",
+      "kind": "data_flow",
+      "name": "Employee purchase request intake",
+      "refs": [
+        "in.purchase_request"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "el.vendor_external_entity",
+      "kind": "external_entity",
+      "name": "External vendor (email sender)",
+      "refs": [
+        "in.vendor_quote"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.manager_approval",
+      "name": "Manager approval of purchase request (item/budget)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Human approval is enforced outside the model and does not decay with model capability, but it approves only the item and budget before any vendor or bank details are known; the approval record is not passed to payments-agent (approval_context_propagates: false), so it does not actually constrain the payment capability.",
+      "covers": [
+        "in.purchase_request"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "unknown"
+    },
+    {
+      "control_id": "ctl.approved_vendor_instruction",
+      "name": "Prompt instruction: only pay vendors on the approved list",
+      "category": "preventive",
+      "mechanism": "behavioral",
+      "capability_dependence": "dependent",
+      "decay_rationale": "Enforced only by the model following prompt.md line 3. It checks vendor identity by name but not bank account details, so a spoofed or compromised quote claiming to be from an approved vendor can still carry attacker bank details. A more capable model may also rationalize exceptions to injected, convincing content.",
+      "covers": [
+        "cap.delegate_payment",
+        "in.vendor_quote"
+      ],
+      "status": "declared",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "control_id": "ctl.bank_detail_verification",
+      "name": "Bind payment bank details to a verified vendor record, not to quote content",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced outside the model by requiring payments-agent (or an intermediary) to look up bank details from a maintained vendor record rather than accepting them from quote text, this would make attacker-supplied bank details unusable regardless of what the orchestrator selects.",
+      "covers": [
+        "cap.delegate_payment",
+        "in.vendor_quote"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctl.approval_context_propagation",
+      "name": "Propagate a decision-bound approval context to payments-agent",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Currently payments-agent trusts any task carrying the orchestrator's bearer token with no reference to what a human actually approved. Passing a signed approval context that includes the specific vendor, amount, and bank details, and requiring payments-agent to verify it before paying, closes the authority-laundering gap regardless of orchestrator behavior.",
+      "covers": [
+        "cap.delegate_payment",
+        "payments-agent"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L7_agent_ecosystem",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctl.agent_card_pinning",
+      "name": "Sign and pin payments-agent's agent card / endpoint identity",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The card is fetched unauthenticated at startup with no signature or pin, so a network-position or DNS compromise could substitute a malicious payments endpoint that then receives all payment tasks. Pinning a signed card prevents silent substitution regardless of model behavior.",
+      "covers": [
+        "payments-agent"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L7_agent_ecosystem",
+      "severs_path": true
+    },
+    {
+      "control_id": "ctl.payment_rate_spend_cap",
+      "name": "Spend cap and step/rate limit on payment delegation",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "No per-day or per-session spend cap, payment count limit, or runtime limit is declared (autonomy.max_unattended_steps and max_runtime_minutes are both unset). A hard cap enforced outside the model would bound damage from runaway or repeated payment delegation regardless of model behavior.",
+      "covers": [
+        "cap.delegate_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.payment_approval_gate",
+      "name": "Raw-action human approval gate immediately before payment disbursement",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A human approval gate reviewing the raw action (vendor, bank account, amount) immediately before disbursement, low in volume, would not decay with model capability and would catch attacker-supplied or erroneous bank details that automated checks miss.",
+      "covers": [
+        "cap.delegate_payment"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "low"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f1_vendor_quote_bank_injection",
+      "title": "TC2 variant: untrusted vendor quote content directly sets payment destination via A2A delegation",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.vendor_quote",
+          "note": "External vendor sends a quote email; content including bank details is untrusted and attacker-reachable."
+        },
+        {
+          "ref": "cap.vendor_list_read",
+          "note": "Orchestrator checks the vendor's name against the approved list, but not the bank account number carried in the quote."
+        },
+        {
+          "ref": "cap.delegate_payment",
+          "note": "Orchestrator hands payments-agent the bank details taken directly from the untrusted quote."
+        },
+        {
+          "ref": "payments-agent",
+          "note": "payments-agent pays the bank details in the task without independently verifying them against a known-good vendor record."
+        }
+      ],
+      "toxic_combination": [
+        "in.vendor_quote",
+        "cap.delegate_payment",
+        "payments-agent"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051",
+          "name": "LLM Prompt Injection",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T2104",
+          "name": "Fraudulent Transactions",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [
+          "ctl.approved_vendor_instruction"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Model id/version changes in orchestrator config (subject.model.swappable); growth in median task length or payments processed per unattended run."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes (bullet 4)",
+          "observation": "Vendor quotes arrive by email from outside the company, making their content untrusted."
+        },
+        {
+          "locator": "runtime notes (bullet 2)",
+          "observation": "payments-agent trusts any task from the orchestrator's bearer token and pays the bank details in the task, with no mention of verifying those details against a stored vendor record."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "The orchestrator is instructed to use the bank details from the chosen quote and to check only that the vendor is on the approved list, not that the bank details match a known-good record."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bind payment bank details to a verified vendor record rather than accepting them directly from quote emails; reject or flag payments where the quote's bank details differ from the vendor's record.",
+          "priority": "p1",
+          "audience": "both",
+          "rmf_function": "MEASURE",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MEASURE 2.7"
+            }
+          ]
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Log and alert when a selected vendor's bank details differ from previously used details for that vendor.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "tampering"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f2_authority_laundering",
+      "title": "TC7: Authority laundering \u2014 approval precedes vendor/bank-detail selection and does not propagate to payments-agent",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.purchase_request",
+          "note": "Manager approves item and budget only; no vendor or bank details exist yet at approval time."
+        },
+        {
+          "ref": "ctl.manager_approval",
+          "note": "Approval record is not passed to payments-agent, so it cannot bind the eventual payment to what was approved."
+        },
+        {
+          "ref": "cap.delegate_payment",
+          "note": "Orchestrator delegates the pay_vendor task with whatever vendor/bank details it selected, with no further gate."
+        },
+        {
+          "ref": "payments-agent",
+          "note": "Trusts any task carrying the orchestrator's bearer token and pays without validating against an approved-vendor record or the original approval."
+        }
+      ],
+      "toxic_combination": [
+        "in.purchase_request",
+        "ctl.manager_approval",
+        "cap.delegate_payment",
+        "payments-agent"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI10",
+          "name": "Rogue Agents",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0083",
+          "name": "Credentials from AI Agent Configuration",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "moderate",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "longer_task_horizon",
+          "autonomy_increase"
+        ],
+        "failing_controls": [
+          "ctl.approved_vendor_instruction"
+        ],
+        "projected_risk": "high",
+        "watch_signal": "Model upgrade in orchestrator config; increase in autonomous payment volume without added human review; autonomy.level raised."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes (bullet 1)",
+          "observation": "The manager approves the purchase request (item and budget) before any quote exists, so the approval cannot reflect the vendor or bank details ultimately used."
+        },
+        {
+          "locator": "runtime notes (bullet 1)",
+          "observation": "The approval record is not passed to payments-agent."
+        },
+        {
+          "locator": "runtime notes (bullet 2)",
+          "observation": "payments-agent pays based solely on the orchestrator's bearer token and the task content, with no reference to what was actually approved."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Propagate a signed approval context including the chosen vendor, amount, and bank details to payments-agent, and require payments-agent to verify it matches before paying.",
+          "priority": "p1",
+          "audience": "both",
+          "rmf_function": "MEASURE",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require a secondary, low-volume, raw-action human approval immediately before each payment disbursement rather than relying on the pre-quote budget approval.",
+          "priority": "p1",
+          "audience": "both"
+        }
+      ],
+      "stride": [
+        "repudiation",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L6_security_compliance",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f3_unsigned_agent_card",
+      "title": "Unsigned, unpinned payments-agent card enables impersonation of the payment endpoint",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.delegate_payment",
+        "payments-agent"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI07",
+          "name": "Insecure Inter-Agent Communication",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0010.005",
+          "name": "AI Supply Chain Compromise: AI Agent Tool",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0073",
+          "name": "Impersonation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1004",
+          "name": "Server Impersonation / Name-Collision",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "new_mcp_server",
+          "new_peer_agent",
+          "control_removal"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "payments-agent endpoint URL or TLS certificate changes; agent card content changes between fetches without a corresponding signed update."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes (bullet 3)",
+          "observation": "The agent card is fetched at startup and is not signed or pinned."
+        },
+        {
+          "locator": "agent card for payments-agent",
+          "observation": "The card specifies only a URL and bearer authentication scheme, with no signature or pinned fingerprint for the orchestrator to verify."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pin and verify payments-agent's signed agent card (e.g., via a fixed hash or signature) instead of fetching it unauthenticated at startup.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.10"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require mutual TLS or signed identity for the A2A connection to payments-agent rather than a static bearer token alone.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "tampering"
+      ],
+      "maestro_layers": [
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.10"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f4_no_spend_limit",
+      "title": "No spend cap or step/rate limit on payment delegation",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.delegate_payment"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T2102",
+          "name": "Service Disruption",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "longer_task_horizon",
+          "control_removal"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "Number of payment delegations per day/session with no corresponding spend cap or step limit configured at runtime."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "No spend cap, rate limit, or step/runtime limit on the payment delegation workflow is described anywhere in the artifacts."
+        },
+        {
+          "locator": "prompt.md:1-4",
+          "observation": "The system prompt describes an unconditional collect-quotes-then-pay loop with no stated bound on frequency or amount."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a per-day/per-session spend cap and step limit on cap.delegate_payment, enforced outside the model.",
+          "priority": "p1",
+          "audience": "both",
+          "rmf_function": "MANAGE",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MANAGE 1.3"
+            }
+          ]
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MANAGE 1.3"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "procurement-orchestrator",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe whether the orchestrator's bearer token or identity could be stolen, replayed, or otherwise spoofed to another system."
+    },
+    {
+      "element_id": "procurement-orchestrator",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f1_vendor_quote_bank_injection"
+      ]
+    },
+    {
+      "element_id": "procurement-orchestrator",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "f2_authority_laundering"
+      ]
+    },
+    {
+      "element_id": "procurement-orchestrator",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "No evidence describes whether vendor list contents or quote data could be disclosed to unintended parties by the orchestrator."
+    },
+    {
+      "element_id": "procurement-orchestrator",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "f4_no_spend_limit"
+      ]
+    },
+    {
+      "element_id": "procurement-orchestrator",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "f2_authority_laundering"
+      ]
+    },
+    {
+      "element_id": "payments-agent",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "f3_unsigned_agent_card"
+      ]
+    },
+    {
+      "element_id": "payments-agent",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f3_unsigned_agent_card"
+      ]
+    },
+    {
+      "element_id": "payments-agent",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "f2_authority_laundering"
+      ]
+    },
+    {
+      "element_id": "payments-agent",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "No evidence describes payments-agent's own logging or whether payment details could be disclosed beyond the intended transaction."
+    },
+    {
+      "element_id": "payments-agent",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "f4_no_spend_limit"
+      ]
+    },
+    {
+      "element_id": "payments-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "f2_authority_laundering"
+      ]
+    },
+    {
+      "element_id": "el.vendor_list_store",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe who can modify the approved vendor list or whether write access is restricted."
+    },
+    {
+      "element_id": "el.vendor_list_store",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe access controls on read access to the approved vendor list contents."
+    },
+    {
+      "element_id": "el.vendor_list_store",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "A static reference list that is only read, with no described write or query volume, has no denial of service surface distinct from the orchestrator process itself."
+    },
+    {
+      "element_id": "el.approval_audit_store",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe access controls or integrity protection on the stored approval record."
+    },
+    {
+      "element_id": "el.approval_audit_store",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe who can read the approval record or whether it contains sensitive request details."
+    },
+    {
+      "element_id": "el.approval_audit_store",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "No information on retention, volume, or availability guarantees for the approval record store."
+    },
+    {
+      "element_id": "el.approval_audit_store",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "f2_authority_laundering"
+      ]
+    },
+    {
+      "element_id": "el.quote_email_flow",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f1_vendor_quote_bank_injection"
+      ]
+    },
+    {
+      "element_id": "el.quote_email_flow",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "No evidence on whether inbound vendor quote attachments are scanned or could themselves leak information back to the sender."
+    },
+    {
+      "element_id": "el.quote_email_flow",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "No rate limiting or volume handling for inbound vendor quote email is described in the artifacts."
+    },
+    {
+      "element_id": "el.delegate_payment_flow",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f1_vendor_quote_bank_injection"
+      ]
+    },
+    {
+      "element_id": "el.delegate_payment_flow",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Transport protection for the A2A call is not confirmed beyond the https URL and bearer scheme in the agent card."
+    },
+    {
+      "element_id": "el.delegate_payment_flow",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "f4_no_spend_limit"
+      ]
+    },
+    {
+      "element_id": "el.purchase_request_flow",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "This flow does not cross a trust boundary; the request is authenticated via SSO within the organization's own trust domain before reaching the orchestrator."
+    },
+    {
+      "element_id": "el.purchase_request_flow",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "This flow does not cross a trust boundary; the request is authenticated via SSO within the organization's own trust domain before reaching the orchestrator."
+    },
+    {
+      "element_id": "el.purchase_request_flow",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "This flow does not cross a trust boundary; the request is authenticated via SSO within the organization's own trust domain before reaching the orchestrator."
+    },
+    {
+      "element_id": "el.vendor_external_entity",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "f1_vendor_quote_bank_injection"
+      ]
+    },
+    {
+      "element_id": "el.vendor_external_entity",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe whether the sending vendor's email identity is verified (e.g., via SPF/DKIM/DMARC) or otherwise attributable."
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "The orchestrator lets an externally-authored vendor quote supply the bank details for an irreversible payment delegated over A2A (inherent critical, U source to S3 sink). The only control on that path is a behavioral prompt instruction that checks vendor name but not bank details, which credits one tier of residual reduction, giving residual high; under model_upgrade or longer task horizons that instruction (ctl.approved_vendor_instruction) is the control whose decay moves the forecast back to critical. A second, related gap compounds this: manager approval happens before any vendor or bank detail is known and is never propagated to payments-agent, so payments-agent pays on bearer-token trust alone (authority laundering, residual moderate but also decaying toward high under the same trigger). The unsigned, unpinned payments-agent card and the absence of any spend or step cap are standing property gaps (residual high each) that are not mitigated by anything in the design today. Recommended priority: bind payment bank details to a verified vendor record and propagate a decision-bound approval context to payments-agent (ctl.bank_detail_verification, ctl.approval_context_propagation); both would sever their respective paths."
+  },
+  "composition": {
+    "delegates_to": [
+      "payments-agent"
+    ],
+    "approval_context_propagates": false
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in the provided artifacts (prompt.md, the payments-agent agent card, and runtime notes), not observed runtime behavior.",
+    "No MCP/IaC manifest or runtime configuration was provided; autonomy limits (max_unattended_steps, max_runtime_minutes) are not stated and are treated as unset, which is a conservative assumption that may overstate or understate actual limits.",
+    "The approved vendor list's content (for example, whether it stores verified bank account numbers) is not described in the artifacts; it is assessed as not currently binding payment destinations."
+  ]
+}

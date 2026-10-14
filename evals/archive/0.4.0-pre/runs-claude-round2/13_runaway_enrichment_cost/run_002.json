@@ -1,0 +1,615 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "13_runaway_enrichment_cost-run002",
+    "assessed_at": "2026-10-13T07:33:05Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.0",
+      "rubric_version": "0.3.0",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "enrichment-agent",
+    "name": "Enrichment Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.enrich_lookup",
+      "tool_ref": "enrich.lookup",
+      "action": "read",
+      "target": "Third-party company enrichment API (industry, size, headquarters)",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.spawn_researcher",
+      "action": "delegate",
+      "target": "Researcher sub-agent investigating an account",
+      "data_sensitivity": "internal",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.crm_write",
+      "action": "write",
+      "target": "CRM account row enrichment fields (industry, size, headquarters)",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.crm_rows",
+      "source": "Nightly batch export of CRM account rows (40,000 rows/night)",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": true,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:2-3",
+      "severity": "high",
+      "note": "\"Keep going until every row is complete\" gives no exit condition, and runtime notes confirm there is no maximum on steps, runtime, retries, or sub-agent spawns."
+    },
+    {
+      "issue": "ambiguous_goal",
+      "evidence_locator": "prompt.md:2",
+      "severity": "moderate",
+      "note": "\"If a lookup fails or looks incomplete\" is undefined, giving the agent broad discretion to escalate to retries or sub-agent spawning on vague grounds."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "enrichment-agent",
+      "kind": "process",
+      "name": "Enrichment Agent",
+      "refs": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    },
+    {
+      "element_id": "flow.crm_rows",
+      "kind": "data_flow",
+      "name": "Nightly CRM row export into agent",
+      "refs": [
+        "in.crm_rows"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "flow.enrich_egress",
+      "kind": "data_flow",
+      "name": "enrich.lookup call egress to third-party API",
+      "refs": [
+        "cap.enrich_lookup"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "ext.enrich_api",
+      "kind": "external_entity",
+      "name": "Third-party company enrichment API provider",
+      "refs": [
+        "cap.enrich_lookup"
+      ]
+    },
+    {
+      "element_id": "store.shared_quota",
+      "kind": "data_store",
+      "name": "Shared enrichment API key and monthly quota",
+      "refs": [
+        "cap.enrich_lookup"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "proc.researcher_subagent",
+      "kind": "process",
+      "name": "Spawned researcher sub-agent",
+      "refs": [
+        "cap.spawn_researcher"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.spend_cap",
+      "name": "Hard spend/call cap with circuit breaker on enrich.lookup",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by infrastructure/billing limits outside the model; a more capable model cannot call an API more times than a hard cap allows.",
+      "covers": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "store.shared_quota"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctrl.retry_spawn_limit",
+      "name": "Per-row retry and spawn-depth/count limit",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by an orchestration-layer step/recursion counter, not by model compliance with instructions.",
+      "covers": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctrl.dedicated_quota",
+      "name": "Dedicated enrichment API key/quota isolated from sales and marketing",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Credential and quota isolation is enforced at the identity/billing layer, independent of model capability.",
+      "covers": [
+        "store.shared_quota"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctrl.spend_alert",
+      "name": "Spend/usage alert on enrichment account",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Monitoring enforced outside the model; it does not prevent spend but shortens time-to-notice.",
+      "covers": [
+        "store.shared_quota"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability"
+    },
+    {
+      "control_id": "ctrl.data_minimization",
+      "name": "Field-level minimization before sending account data to enrich.lookup",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "Effective if enforced by a non-model template restricting outbound fields; a more capable model populating free-text fields could partially route around it, so it should not be enforced by the model alone.",
+      "covers": [
+        "cap.enrich_lookup",
+        "in.crm_rows"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations",
+      "constrains_sink": true
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "fin.quota_exhaustion",
+      "title": "Unbounded retries and recursive sub-agent spawning can exhaust the shared enrichment quota (TC6 spend loop / cascading failure)",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "store.shared_quota"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0029",
+          "name": "Denial of AI Service",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T2102",
+          "name": "Service Disruption",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "data_scope_expansion",
+          "autonomy_increase"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "Nightly batch size growing beyond 40,000 rows, malformed-row rate rising above roughly 3 percent, or monthly quota utilization approaching 100 percent before month end."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes:1",
+          "observation": "There is no maximum on steps, runtime, retries, or sub agents; sub agents can spawn their own researchers, enabling unbounded recursive escalation."
+        },
+        {
+          "locator": "runtime notes:2",
+          "observation": "enrich.lookup is billed per call and shares an API key and monthly quota with sales and marketing tools; when the quota runs out, their tools stop working until the next month."
+        },
+        {
+          "locator": "runtime notes:3",
+          "observation": "Roughly 3 percent of the 40,000-row nightly batch (about 1,200 rows) have malformed company names that never return a complete result, so the retry-or-spawn instruction triggers repeatedly for these rows every night."
+        },
+        {
+          "locator": "runtime notes:4",
+          "observation": "There is no spend alert on the enrichment account, so quota exhaustion would not be noticed until other teams' tools stop working."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "\"Keep going until every row is complete\" provides no exit condition for rows that can never complete."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a hard per-run and per-month spend cap on the enrichment API key with an automatic circuit breaker that halts enrich.lookup and spawn_researcher calls when the cap is reached.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-5"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Cap retries per row (e.g., max 2) and cap sub-agent spawn depth/count (e.g., no recursive spawning beyond one level, max N researchers per run); route rows that still fail to a dead-letter queue for manual review instead of infinite escalation.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Issue the enrichment agent its own dedicated API key and quota, separate from the shared key used by sales and marketing tools, so a runaway enrichment run cannot deny service to other teams.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add a spend/usage alert on the enrichment account (e.g., at 50/80/100 percent of monthly quota) so a runaway run is caught before quota exhaustion.",
+          "priority": "p2",
+          "audience": "both"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "cascading_failure",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        },
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MANAGE 1.3"
+        },
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "SC-5"
+        }
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "fin.data_egress",
+      "title": "Internal CRM account data sent to a third-party enrichment API with no stated data minimization",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Nightly batch of CRM account rows"
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Company name and account fields sent to third-party lookup API, billed per call"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1804",
+          "name": "API Data Harvest",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "moderate",
+      "residual_risk": "moderate",
+      "forecast": {
+        "triggers": [
+          "data_scope_expansion",
+          "intended_purpose_change"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "CRM export schema expanding to include confidential fields (e.g., contract value, contact PII) in the data sent to enrich.lookup."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "prompt.md:1",
+          "observation": "\"For each account row, fill in industry, size, and headquarters using enrich.lookup\" implies account-identifying data (at minimum the company name) is sent to the third-party API for every row."
+        },
+        {
+          "locator": "runtime notes:2",
+          "observation": "enrich.lookup is described as a paid third-party API with no mention of field-level data minimization before sending account data to it."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Minimize the fields sent to the third-party enrichment API to only the company name needed for lookup, excluding any other CRM account fields, and confirm a data processing agreement is in place with the vendor.",
+          "priority": "p2",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-7"
+            }
+          ]
+        }
+      ],
+      "stride": [
+        "information_disclosure"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MAP 4.1"
+        },
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "SC-7"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "moderate",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "enrichment-agent",
+      "category": "spoofing",
+      "status": "not_applicable",
+      "rationale": "No external actor can impersonate this agent or its trigger; the nightly batch runs on an internal schedule with no user-facing identity to spoof."
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "No mechanism for external or sub-agent content to modify this agent's own configuration or instructions is described in the design."
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not describe whether lookup calls, spawn events, or CRM writes are logged or attributable to a specific run."
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "fin.data_egress"
+      ]
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "fin.quota_exhaustion"
+      ]
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "elevation_of_privilege",
+      "status": "not_applicable",
+      "rationale": "Spawned sub-agents and lookup calls use the same shared, already-broad service credential as the parent; no escalation beyond that existing scope is described."
+    },
+    {
+      "element_id": "flow.enrich_egress",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Transport integrity protections (e.g., TLS, request signing) for calls to the external enrichment API are not described in the artifacts."
+    },
+    {
+      "element_id": "flow.enrich_egress",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "fin.data_egress"
+      ]
+    },
+    {
+      "element_id": "flow.enrich_egress",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "fin.quota_exhaustion"
+      ]
+    },
+    {
+      "element_id": "ext.enrich_api",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "No verification mechanism for the enrichment API's identity, such as certificate pinning or endpoint allowlisting, is described."
+    },
+    {
+      "element_id": "ext.enrich_api",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Whether the third-party provider logs or attests to individual billed calls in an attributable way is not described."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Access controls on who can modify the shared quota configuration or rotate the API key are not described in the artifacts."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "How the shared API key is stored and which systems or people can read the quota store is not described in the artifacts."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "fin.quota_exhaustion"
+      ]
+    },
+    {
+      "element_id": "proc.researcher_subagent",
+      "category": "spoofing",
+      "status": "not_applicable",
+      "rationale": "Sub-agents are spawned directly by the parent within the same trust domain; there is no described channel for impersonating a researcher sub-agent."
+    },
+    {
+      "element_id": "proc.researcher_subagent",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Whether a spawned sub-agent's instructions or definition can be altered after it is created is not described."
+    },
+    {
+      "element_id": "proc.researcher_subagent",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "No attribution or logging of individual sub-agent actions separate from the parent run is described in the artifacts."
+    },
+    {
+      "element_id": "proc.researcher_subagent",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "fin.data_egress"
+      ]
+    },
+    {
+      "element_id": "proc.researcher_subagent",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "fin.quota_exhaustion"
+      ]
+    },
+    {
+      "element_id": "proc.researcher_subagent",
+      "category": "elevation_of_privilege",
+      "status": "not_applicable",
+      "rationale": "Spawned sub-agents inherit the same scoped shared API credential as the parent; no additional privilege is granted by spawning."
+    }
+  ],
+  "rating": {
+    "inherent": "high",
+    "residual": "high",
+    "forecast": "high",
+    "rationale": "No control in this design currently prevents the enrichment agent from retrying or recursively spawning sub-agents without limit against a shared, uncapped, unmonitored API quota, so the property finding on resource exhaustion (ASI08) sits at high inherent and residual with zero credited controls. A secondary path finding on egress of internal CRM data to the third-party lookup sits at moderate but would rise to high if the data sent ever expands to confidential fields. The rollup is driven by the quota exhaustion finding; the forecast does not move further than residual because no existing control is present to decay, and the property-finding cap holds it at high regardless of trigger."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in the provided prompt and runtime notes, not observed runtime behavior; no execution logs or live telemetry were reviewed.",
+    "No information was provided on logging, audit trails, or action attribution for enrich.lookup calls, sub-agent spawns, or CRM writes, so repudiation risk could not be fully assessed and is marked not_assessed rather than mitigated or absent.",
+    "The exact set of CRM fields sent to the third-party enrichment API is not specified beyond the company name implied by the lookup; the data egress finding assumes at least the company identifier is sent and may understate risk if additional fields are included."
+  ]
+}
