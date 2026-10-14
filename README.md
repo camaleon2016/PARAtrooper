@@ -128,21 +128,20 @@ Use one `--out` folder per model. Each run records token use and cost in a `run_
 
 ### Across models
 
-v0.4.0, 16 cases (13 earlier cases plus 3 held out cases written before v0.4.0 was built), with the same rubric and schema:
+v0.4.x, 16 cases (13 earlier cases plus 3 held out cases written before v0.4.0 was built), with the same skill, rubric, and schema:
 
-| Measure | Claude (claude-sonnet-5) | GPT-5.4 (Azure) |
-|---|---|---|
-| Runs per case | 3 | 5 |
-| Mean recall, cases 01 to 13 | 97% | 96% |
-| Held out mean recall | 89% | 97% |
-| Validator clean | 98% | 65% |
-| Runs with a false positive | 1 of 48 | 0 of 80 |
-| Main path residual agreement, every case | 100% | 80% or more except one case at 60% |
-| GitHub MCP backtest (May 2025): recall, main path agreement | 100%, 100% | 100%, 100% |
-| Supabase MCP backtest (July 2025): recall, main path agreement | 100%, 100% | 100%, 100% |
-| Mean output tokens per assessment | 43,414 | 5,836 |
+| Measure | Claude (claude-sonnet-5) | GPT-5.4 (Azure) | GPT-5.4 with one repair round |
+|---|---|---|---|
+| Runs per case | 3 | 5 | 5 |
+| Mean recall, cases 01 to 13 | 99% | 97% | 96% |
+| Held out mean recall | 89% | 97% | 92% |
+| Validator clean | 98% | 65% | **100%** (79% first attempt) |
+| Runs with a false positive | 1 of 48 | 0 of 80 | 0 of 80 |
+| Lowest main path residual agreement | 100% | 60% (one case) | 40% (held out case 14) |
+| GitHub and Supabase MCP backtests: recall, main path agreement | 100%, 100% | 100%, 100% | 100%, 100% |
+| Mean output tokens per assessment | 43,559 | 5,836 | 7,154 |
 
-GPT-5.4's lower validity comes mostly from incomplete STRIDE coverage matrices in single shot runs; see its notes. Details: [Claude v0.4.0](evals/runs-claude-v040/RESULTS.md) and [notes](evals/runs-claude-v040/RESULTS_NOTES.md); [GPT-5.4 v0.4.0](evals/runs-gpt-54-v040/RESULTS.md) and [notes](evals/runs-gpt-54-v040/RESULTS_NOTES.md). Rounds before the release: [evals/archive/0.4.0-pre/](evals/archive/0.4.0-pre/NOTES.md).
+The repair round mirrors how the skill runs on agent platforms: the model sees its own validator errors and corrects them. Details: [Claude v0.4.0](evals/runs-claude-v040/RESULTS_NOTES.md), [GPT-5.4 v0.4.0](evals/runs-gpt-54-v040/RESULTS_NOTES.md), and [GPT-5.4 with repair, v0.4.1](evals/runs-gpt-54-v041-repair/RESULTS_NOTES.md). Rounds before the v0.4.0 release: [evals/archive/0.4.0-pre/](evals/archive/0.4.0-pre/NOTES.md).
 
 ### By version
 

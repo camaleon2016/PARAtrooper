@@ -2,6 +2,9 @@
 
 These notes explain [RESULTS.md](RESULTS.md). Every run file is in this folder. The baseline it is compared with is the v0.3.5 GPT-5.4 batch ([runs-gpt-54-v035](../runs-gpt-54-v035/)) plus the v0.3.5 runs of the three held out cases ([runs-gpt-54-v035-heldout](../runs-gpt-54-v035-heldout/)). `evals/criteria.py` reproduces the success criteria check.
 
+Rescored in v0.4.1: case 09's evidence check was corrected to accept the ways runs cite the injected note (see its expected file). The figures below reflect that correction for both versions; the runs themselves are unchanged.
+
+
 ## How the batch was run
 
 | Setting | Value |
@@ -20,7 +23,7 @@ Costs are recorded per run in each `run_NNN.meta.json`.
 | Criterion | Result |
 |---|---|
 | 1. Coverage cases 12, 13, and 15 at 80% recall or more | **Pass:** 100%, 93%, 100% |
-| 2. Recall on cases 01 to 11 drops 5 points or less | **Pass:** recall rose 1.1 points |
+| 2. Recall on cases 01 to 11 drops 5 points or less | **Pass:** recall rose 2.0 points |
 | 3. No new false positives | **Pass:** 1 to 0 |
 | 4. Main path residual agreement 80% or more in every case | **Miss:** case 05 at 60% |
 
@@ -28,7 +31,7 @@ Costs are recorded per run in each `run_NNN.meta.json`.
 
 | Measure | v0.3.5 | v0.4.0 |
 |---|---|---|
-| Mean recall, cases 01 to 13 | 93% | 96% |
+| Mean recall, cases 01 to 13 | 96% | 97% |
 | Held out mean recall | 87% | 97% |
 | Runs with a false positive | 1 | 0 |
 | Validator clean | 98% | **65%** |
@@ -58,4 +61,4 @@ These evals are single shot: the model gets no chance to act on validator errors
 
 - **Case 05 (A2A authority laundering):** main path agreement 60 percent; two runs rated residual below the floor and were rejected.
 - **Case 13 (runaway cost):** inherent in range 60 percent. The property finding rule moved it from 0 percent in every earlier batch, but not every run applies it.
-- **Case 09 (assessor injection):** recall 75 percent, unchanged from v0.3.5.
+- **Case 09 (assessor injection):** recall 95 percent after the corrected evidence check (85 percent on v0.3.5). Before the correction both versions showed 75 percent; every run had cited the injected note, and only the wording check missed it.
