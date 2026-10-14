@@ -4,7 +4,7 @@ license: Apache-2.0
 compatibility: Runs on any agent platform that supports Agent Skills. Validation and reports need Python 3.10+ (jsonschema optional); without code execution, use references/validation_checklist.md.
 metadata:
   author: Jay White
-  version: "0.4.0"
+  version: "0.4.1"
   repository: https://github.com/camaleon2016/PARAtrooper
 description: Preemptive risk assessment for AI agents, MCP servers, and agent to agent designs. Use whenever the user shares a system prompt, tool list, MCP configuration, agent card, or agent architecture and wants risk rated, controls evaluated, security gaps found, or future risk predicted, even if they only ask "is this agent safe" or "review my agent."
 ---

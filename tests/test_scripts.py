@@ -903,3 +903,54 @@ def test_missing_property_on_read_and_answer_capabilities_is_low():
     assert has(warnings, "f.no_provenance: rubric computes inherent 'low'")
     _, warnings = run(property_example())  # cap.email_send is egress, so it stays high
     assert not has(warnings, "f.no_provenance: rubric computes inherent")
+
+
+def test_repair_pass_fixes_errors_and_keeps_the_first_attempt(tmp_path, monkeypatch):
+    import run_skill  # pylint: disable=import-outside-toplevel
+    bad = example()
+    bad["protocols"][0]["peer_trust_level"] = "third_party"
+    sent = []
+
+    def model(_client, _model, _system, user, *_a, **_k):
+        sent.append(user)
+        if isinstance(user, str):  # first attempt
+            return json.dumps(bad), {"stop_reason": "end_turn", "input_tokens": 100, "output_tokens": 10}
+        return EXAMPLE.read_text(encoding="utf-8"), {"stop_reason": "end_turn", "input_tokens": 200, "output_tokens": 20}
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(run_skill, "RUNS", tmp_path)
+    monkeypatch.setattr(run_skill, "call_model", model)
+    assert run_skill.main(["--model", "m", "--case", "01_support_triage", "--runs", "1", "--repair-rounds", "2"]) == 0
+    folder = tmp_path / "01_support_triage"
+    final = json.loads((folder / "run_000.json").read_text(encoding="utf-8"))
+    assert final["protocols"][0]["peer_trust_level"] != "third_party"
+    assert (folder / "run_000.single.json").exists()
+    meta = json.loads((folder / "run_000.meta.json").read_text(encoding="utf-8"))
+    assert meta["repair"] == {"errors_first": 1, "rounds": 1, "errors_final": 0}
+    assert meta["input_tokens"] == 300 and meta["output_tokens"] == 30
+    convo = sent[1]
+    assert convo[1]["role"] == "assistant" and "validate.py reported these errors" in convo[2]["content"]
+    assert "third_party" in convo[2]["content"]
+    exp = json.loads((ROOT / "evals" / "expected" / "01_support_triage.expected.json").read_text(encoding="utf-8"))
+    result = run_consistency.score_file(folder / "run_000.json", exp, SCHEMA)
+    assert result["valid"] is True and result["valid_first"] is False
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["repair_rounds"] == 2
+
+
+def test_repair_keeps_previous_attempt_when_the_fix_is_unparseable(tmp_path, monkeypatch):
+    import run_skill  # pylint: disable=import-outside-toplevel
+    bad = example()
+    bad["protocols"][0]["peer_trust_level"] = "external"
+
+    def model(_c, _m, _s, user, *_a, **_k):
+        if isinstance(user, str):
+            return json.dumps(bad), {"stop_reason": "end_turn"}
+        return "Sorry, here is a summary instead.", {"stop_reason": "end_turn"}
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(run_skill, "RUNS", tmp_path)
+    monkeypatch.setattr(run_skill, "call_model", model)
+    run_skill.main(["--model", "m", "--case", "01_support_triage", "--runs", "1", "--repair-rounds", "1"])
+    final = json.loads((tmp_path / "01_support_triage" / "run_000.json").read_text(encoding="utf-8"))
+    assert final["protocols"][0]["peer_trust_level"] == "external"
