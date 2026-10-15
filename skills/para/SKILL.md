@@ -4,7 +4,7 @@ license: Apache-2.0
 compatibility: Runs on any agent platform that supports Agent Skills. Validation and reports need Python 3.10+ (jsonschema optional); without code execution, use references/validation_checklist.md.
 metadata:
   author: Jay White
-  version: "0.4.1"
+  version: "0.4.2"
   repository: https://github.com/camaleon2016/PARAtrooper
 description: Preemptive risk assessment for AI agents, MCP servers, and agent to agent designs. Use whenever the user shares a system prompt, tool list, MCP configuration, agent card, or agent architecture and wants risk rated, controls evaluated, security gaps found, or future risk predicted, even if they only ask "is this agent safe" or "review my agent."
 ---
@@ -74,7 +74,7 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 - Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
 - Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
-- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result.
+- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result. A prompt instruction is always `behavioral`, and it is a control only if it explicitly forbids or limits the action on the path; task descriptions are not controls, and an instruction that creates the risk is evidence of the weakness, never a control (control_decay.md, rules 4 and 5).
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
 ### 8. Find attack paths
@@ -93,7 +93,7 @@ Load `references/stride_agentic.md`. Make sure `elements` includes the minimum e
 
 Load `references/rubric.md`. For each finding:
 1. Compute inherent (sections 4 and 3). For property findings, use section 5a.
-2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`.
+2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`; a residual above the floor without it is rejected. Never rate below the floor.
 3. For **every** finding, choose the applicable triggers, remove the controls those triggers defeat, and recompute to get `forecast.projected_risk` (section 6). Set `watch_signal`. If no trigger changes the tier, record the triggers you considered with `projected_risk` equal to `residual_risk`; never leave the forecast out.
 4. Set `likelihood`, `consequence`, and `confidence` (sections 8 and 9).
 

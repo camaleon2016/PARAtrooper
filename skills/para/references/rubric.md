@@ -1,6 +1,6 @@
 # PARA Rubric
 
-Rubric version: 0.3.1. Applies to schema 0.6.x.
+Rubric version: 0.3.2. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -94,9 +94,9 @@ Approval volume (step 2): use `low` only when the design says each approver sees
 
 The approval gate floor applies to the final residual, after steps 3 and 4. Stacking other controls on top of a summary gate cannot push the residual below `moderate`, because the approver is still deciding on the model's description of the action.
 
-**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`. Never rate residual below the floor; the validator rejects it.
+**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`; from rubric 0.3.2 the validator rejects a residual above the floor without one. Never rate residual below the floor; the validator rejects it.
 
-`scripts/validate.py` computes the floor from the controls on the path. It warns when a document claims less, and when a document claims more without a `residual_rationale`.
+`scripts/validate.py` computes the floor from the controls on the path. It rejects a residual below the floor, and a residual above it without a `residual_rationale`.
 
 The v0.3.1 eval batch showed why this rule exists: every run kept residual at or above the floor, but some runs raised it by unstated judgment, so runs of the same design disagreed. Stating the reason makes the disagreement reviewable.
 

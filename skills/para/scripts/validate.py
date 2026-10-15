@@ -168,6 +168,13 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
 
 # STRIDE per element (stride_agentic.md). Data flows need coverage only when they cross a boundary;
 # a data store needs repudiation only when it is an audit record.
+def rubric_at_least(doc: dict, minimum: tuple[int, int, int]) -> bool:
+    """Rules added in a rubric version apply only to assessments made under it (the harness and the skill
+    record assessor.rubric_version)."""
+    version = ((doc.get("assessment") or {}).get("assessor") or {}).get("rubric_version") or "0.0.0"
+    return schema_at_least(version, minimum)
+
+
 def schema_at_least(version: str, minimum: tuple[int, int, int]) -> bool:
     """Rules introduced in a schema version apply only to documents that declare it, so earlier
     assessments (for example, baseline runs of an older skill) are judged by the rules they targeted."""
@@ -359,6 +366,12 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
             warnings.append(
                 f"controls/{ctl['control_id']}: behavioral control marked independent; see control_decay.md rule 3"
             )
+        label = f"{ctl['control_id']} {ctl.get('name', '')}".lower()
+        if ctl["mechanism"] == "structural" and any(w in label for w in ("prompt", "instruction", "system message")):
+            warnings.append(
+                f"controls/{ctl['control_id']}: looks like a prompt instruction but is marked structural; prompt "
+                "instructions are always behavioral (control_decay.md, classification rule 4)"
+            )
         if ctl.get("severs_path") and not (
             ctl["mechanism"] == "structural" and ctl["capability_dependence"] == "independent"
             and ctl["category"] == "preventive"
@@ -442,10 +455,10 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
                          f"('{floor}'); rubric section 5 never allows a residual below the floor")
                 (errors if schema_at_least(doc.get("schema_version", "0.0.0"), (0, 6, 0)) else warnings).append(below)
             elif RANK[f["residual_risk"]] > RANK[floor] and not f.get("residual_rationale"):
-                warnings.append(
-                    f"{fid}: residual '{f['residual_risk']}' is above the rubric floor ('{floor}') with no "
-                    "residual_rationale (rubric section 5)"
-                )
+                # An error from rubric 0.3.2: judgment above the floor must be stated, as judgment below it is barred.
+                above = (f"{fid}: residual '{f['residual_risk']}' is above the rubric floor ('{floor}') with no "
+                         "residual_rationale (rubric section 5); state the design fact, or rate at the floor")
+                (errors if rubric_at_least(doc, (0, 3, 2)) else warnings).append(above)
         if not f.get("recommendations") and RANK[f["residual_risk"]] >= RANK["moderate"]:
             warnings.append(f"{fid}: residual {f['residual_risk']} with no recommendations")
         # A structural fix named only in prose leaves no gap list for reviewers and nothing for a forecast to

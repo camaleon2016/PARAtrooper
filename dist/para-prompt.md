@@ -83,7 +83,7 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 - Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
 - Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
-- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result.
+- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result. A prompt instruction is always `behavioral`, and it is a control only if it explicitly forbids or limits the action on the path; task descriptions are not controls, and an instruction that creates the risk is evidence of the weakness, never a control (control_decay.md, rules 4 and 5).
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
 ### 8. Find attack paths
@@ -102,7 +102,7 @@ Load `references/stride_agentic.md`. Make sure `elements` includes the minimum e
 
 Load `references/rubric.md`. For each finding:
 1. Compute inherent (sections 4 and 3). For property findings, use section 5a.
-2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`.
+2. Apply control credits in order to get residual (section 5). Residual equals the resulting floor. If a design fact the classifications cannot express makes that too low, rate higher and state the fact in `residual_rationale`; a residual above the floor without it is rejected. Never rate below the floor.
 3. For **every** finding, choose the applicable triggers, remove the controls those triggers defeat, and recompute to get `forecast.projected_risk` (section 6). Set `watch_signal`. If no trigger changes the tier, record the triggers you considered with `projected_risk` equal to `residual_risk`; never leave the forecast out.
 4. Set `likelihood`, `consequence`, and `confidence` (sections 8 and 9).
 
@@ -217,6 +217,8 @@ These double as the ISO/IEC 42001 8.2 significant change criteria. Any trigger t
 1. When unsure between `dependent` and `partially_dependent`, choose `dependent` and set finding confidence to `medium`.
 2. A structural control that is only as strong as a string the model writes is `partially_dependent`. Examples: a tag the model sets, or a destination the model chooses from a writable list.
 3. A control is `independent` only if the path is still blocked when you assume the model fully cooperates with the attacker.
+4. **A prompt instruction is always `behavioral`,** never `structural`, never `independent`, and never severs a path, however firmly it is worded. The validator warns when a control that looks like a prompt instruction is marked structural.
+5. **Record a prompt instruction as a control only when it explicitly forbids or limits the action on the path** (for example, "never send records to an address not on the ticket"). A task description ("summarize each invoice") is not a control. An instruction that creates the risk ("treat recalled memories as the user's own instructions") is part of the weakness: cite it as evidence, and never credit it. In the v0.4.x batches, runs that credited task descriptions or risky instructions as controls computed different residual floors for the same design.
 
 ---
 
@@ -375,7 +377,7 @@ Load this file when the design includes MCP servers, A2A peers, or other agent c
 
 # PARA Rubric
 
-Rubric version: 0.3.1. Applies to schema 0.6.x.
+Rubric version: 0.3.2. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -469,9 +471,9 @@ Approval volume (step 2): use `low` only when the design says each approver sees
 
 The approval gate floor applies to the final residual, after steps 3 and 4. Stacking other controls on top of a summary gate cannot push the residual below `moderate`, because the approver is still deciding on the model's description of the action.
 
-**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`. Never rate residual below the floor; the validator rejects it.
+**Residual equals the floor these credits produce.** Do not choose a different tier by judgment. If you believe a credited control deserves less credit than its classification gives it, fix the classification (mechanism, dependence, review mode, or what it covers) so the credit changes, rather than overriding the tier. When a design fact the classifications cannot express still makes the floor too low, you may rate residual higher, and you must state that fact in `residual_rationale`; from rubric 0.3.2 the validator rejects a residual above the floor without one. Never rate residual below the floor; the validator rejects it.
 
-`scripts/validate.py` computes the floor from the controls on the path. It warns when a document claims less, and when a document claims more without a `residual_rationale`.
+`scripts/validate.py` computes the floor from the controls on the path. It rejects a residual below the floor, and a residual above it without a `residual_rationale`.
 
 The v0.3.1 eval batch showed why this rule exists: every run kept residual at or above the floor, but some runs raised it by unstated judgment, so runs of the same design disagreed. Stating the reason makes the disagreement reviewable.
 
@@ -718,12 +720,14 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Findings
 
+- **Warning:** a control that looks like a prompt instruction is marked `structural`; prompt instructions are always `behavioral` (control_decay.md, rule 4).
+
 13. **Error:** a present finding does not reference a planned element. **Warning:** a forecast finding that references a planned element names a trigger that adds it (`new_tool`, `new_mcp_server`, `new_peer_agent`, or `data_scope_expansion`).
 14. **Error:** `residual_risk` is not above `inherent_risk`.
 15. **Error:** every finding has a `forecast` block. If no trigger changes the tier, list the triggers you considered and set `projected_risk` equal to `residual_risk`.
 16. **Error:** `forecast.projected_risk` is not below `residual_risk`, every `failing_controls` entry is a defined control, and `triggers` is not empty. **Warning:** `watch_signal` is set, and an independent control is listed as failing only under a trigger that can defeat it.
 17. **Warning:** for present findings, `inherent_risk` matches the rubric's base matrix and autonomy modifier (rubric section 4).
-18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Warning:** if it is above that floor, `residual_rationale` explains why.
+18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Error** (rubric 0.3.2 and later): if it is above that floor, `residual_rationale` explains why.
 19. **Warning:** any finding with residual above `low` has at least one recommendation.
 20. **Warning:** a finding with structural preventive or containment recommendations has at least one `missing_recommended` control whose `covers` includes an id on its attack path.
 21. **Error:** a treatment with option `accept` names `treatment.approved_by`.
