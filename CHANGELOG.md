@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.2 (unreleased)
+
+Rubric 0.3.2. Schema unchanged (0.6.0). Consistency fixes from the v0.4.x diagnosis.
+
+### Changed
+- `control_decay.md` rules 4 and 5, and SKILL.md step 7: a prompt instruction is always behavioral and never severs a path. It counts as a control only when it explicitly forbids or limits the action on the path; task descriptions are not controls, and an instruction that creates the risk (such as "treat recalled memories as the user's own instructions") is evidence of the weakness, never a control. In the v0.4.x batches, runs that credited task descriptions or the design's own risky instructions computed different residual floors for the same design: case 07 split between `low` and `high`, and case 16 between `high` and `critical`.
+- Rubric 0.3.2: a residual above the floor without a `residual_rationale` is an error, as a residual below the floor already was. Unstated judgment above the floor split held out case 14 between `high` and `critical`. Assessments made under earlier rubric versions keep the warning.
+
+### Added
+- Validator warning when a control that looks like a prompt instruction is marked structural.
+
+### Diagnosis behind this release
+- The repair round did not cause the agreement drop in the v0.4.1 batch: most split runs were clean on the first attempt, and the runs it repaired moved toward the rubric floor.
+- GPT-5.4's split on case 05 in v0.4.0 came from two runs rating residual below the floor with no controls credited; the validator rejected both, and one repair round corrects them.
+
 ## 0.4.1 (2026-10-14)
 
 Measured on GPT-5.4 with one repair round: validator clean 79% on the first attempt and 100% after repair, at $0.118 per assessment. Case 09 rescored across versions with the corrected evidence check. See `evals/runs-gpt-54-v041-repair/`.

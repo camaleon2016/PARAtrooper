@@ -35,12 +35,14 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Findings
 
+- **Warning:** a control that looks like a prompt instruction is marked `structural`; prompt instructions are always `behavioral` (control_decay.md, rule 4).
+
 13. **Error:** a present finding does not reference a planned element. **Warning:** a forecast finding that references a planned element names a trigger that adds it (`new_tool`, `new_mcp_server`, `new_peer_agent`, or `data_scope_expansion`).
 14. **Error:** `residual_risk` is not above `inherent_risk`.
 15. **Error:** every finding has a `forecast` block. If no trigger changes the tier, list the triggers you considered and set `projected_risk` equal to `residual_risk`.
 16. **Error:** `forecast.projected_risk` is not below `residual_risk`, every `failing_controls` entry is a defined control, and `triggers` is not empty. **Warning:** `watch_signal` is set, and an independent control is listed as failing only under a trigger that can defeat it.
 17. **Warning:** for present findings, `inherent_risk` matches the rubric's base matrix and autonomy modifier (rubric section 4).
-18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Warning:** if it is above that floor, `residual_rationale` explains why.
+18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Error** (rubric 0.3.2 and later): if it is above that floor, `residual_rationale` explains why.
 19. **Warning:** any finding with residual above `low` has at least one recommendation.
 20. **Warning:** a finding with structural preventive or containment recommendations has at least one `missing_recommended` control whose `covers` includes an id on its attack path.
 21. **Error:** a treatment with option `accept` names `treatment.approved_by`.

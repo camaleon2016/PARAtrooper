@@ -110,6 +110,7 @@ def test_rubric_inherent_mismatch_warns():
     doc = example()
     doc["findings"][0]["inherent_risk"] = "high"
     doc["rating"]["inherent"] = "high"
+    doc["findings"][0]["residual_rationale"] = "Held at high: only a prompt rule stands between the email and the CRM."
     errors, warnings = run(doc)
     assert errors == []
     assert has(warnings, "rubric computes inherent 'critical'")
@@ -514,11 +515,11 @@ def test_residual_above_floor_needs_rationale():
     doc = example()
     doc["findings"][0]["residual_risk"] = "critical"
     doc["rating"]["residual"] = "critical"
-    _, warnings = run(doc)
-    assert has(warnings, "above the rubric floor ('high') with no residual_rationale")
+    errors, _ = run(doc)
+    assert has(errors, "above the rubric floor ('high') with no residual_rationale")
     doc["findings"][0]["residual_rationale"] = "Recipient field is model chosen, so logging only detects after the fact."
-    _, warnings = run(doc)
-    assert not has(warnings, "residual_rationale")
+    errors, warnings = run(doc)
+    assert not has(errors + warnings, "residual_rationale")
 
 
 def test_main_path_residual_is_isolated_from_rollup():
@@ -733,7 +734,8 @@ def property_example(kind_ok=True):
     f = copy.deepcopy(doc["findings"][0])
     f.update({"finding_id": "f.no_provenance", "title": "No attributable record of sends",
               "finding_kind": "property", "affected_refs": ["cap.email_send"], "attack_path": [],
-              "toxic_combination": [], "stride": ["repudiation"], "inherent_risk": "high", "residual_risk": "high"})
+              "toxic_combination": [], "stride": ["repudiation"], "inherent_risk": "high", "residual_risk": "high",
+              "residual_rationale": "The prompt rule cannot record who asked for a send, so its credit does not apply here."})
     f["forecast"]["projected_risk"] = "high"
     f["recommendations"] = []
     if not kind_ok:
@@ -954,3 +956,21 @@ def test_repair_keeps_previous_attempt_when_the_fix_is_unparseable(tmp_path, mon
     run_skill.main(["--model", "m", "--case", "01_support_triage", "--runs", "1", "--repair-rounds", "1"])
     final = json.loads((tmp_path / "01_support_triage" / "run_000.json").read_text(encoding="utf-8"))
     assert final["protocols"][0]["peer_trust_level"] == "external"
+
+
+def test_above_floor_without_rationale_is_an_error_from_rubric_032():
+    doc = example()
+    doc["findings"][0]["residual_risk"] = "critical"
+    doc["rating"]["residual"] = "critical"
+    errors, _ = run(doc)
+    assert has(errors, "above the rubric floor ('high') with no residual_rationale")
+    doc["assessment"]["assessor"]["rubric_version"] = "0.3.1"  # earlier assessments keep the warning
+    errors, warnings = run(doc)
+    assert not has(errors, "above the rubric floor") and has(warnings, "above the rubric floor")
+
+
+def test_prompt_instruction_marked_structural_warns():
+    doc = example()
+    doc["controls"][0]["mechanism"] = "structural"  # ctl.prompt_rule
+    _, warnings = run(doc)
+    assert has(warnings, "looks like a prompt instruction but is marked structural")
