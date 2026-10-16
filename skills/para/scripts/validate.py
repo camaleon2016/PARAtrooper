@@ -158,7 +158,11 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
     if any(c["mechanism"] == "structural" and c["capability_dependence"] != "dependent" and c.get("constrains_sink")
            for c in others):
         credit += 1
-    if any(c["mechanism"] == "behavioral" or c["capability_dependence"] == "dependent" for c in others):
+    # Rubric 5a: prompt instructions and other model dependent controls never restore a missing property
+    # (provenance, a spend or step limit), so property findings get no step 4 credit. Until v0.4.2 the
+    # validator granted it anyway, which made correct ratings of property findings look above the floor.
+    if finding.get("finding_kind") != "property" and any(
+            c["mechanism"] == "behavioral" or c["capability_dependence"] == "dependent" for c in others):
         credit += 1
 
     inherent = finding["inherent_risk"]
