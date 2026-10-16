@@ -15,6 +15,9 @@ Rubric 0.3.2. Schema unchanged (0.6.0). Consistency fixes from the v0.4.x diagno
 - The repair round did not cause the agreement drop in the v0.4.1 batch: most split runs were clean on the first attempt, and the runs it repaired moved toward the rubric floor.
 - GPT-5.4's split on case 05 in v0.4.0 came from two runs rating residual below the floor with no controls credited; the validator rejected both, and one repair round corrects them.
 
+### Fixed after the v0.4.2 batches
+- Validator: property findings no longer receive step 4 credit from prompt instructions or other model dependent controls. Rubric section 5a already said such controls never restore a missing property, but the validator credited them, so a property finding rated at its true floor appeared to be above the floor. In the v0.4.2 Claude batch this produced 19 of 21 validator failures, and it inflated first attempt failures on GPT-5.4 and Gemini. All v0.4.2 runs are rescored with the corrected rule; repaired runs on GPT-5.4 and Gemini were repaired against the old rule, which the notes disclose.
+
 ## 0.4.1 (2026-10-14)
 
 Measured on GPT-5.4 with one repair round: validator clean 79% on the first attempt and 100% after repair, at $0.118 per assessment. Case 09 rescored across versions with the corrected evidence check. See `evals/runs-gpt-54-v041-repair/`.

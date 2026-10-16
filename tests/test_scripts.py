@@ -974,3 +974,15 @@ def test_prompt_instruction_marked_structural_warns():
     doc["controls"][0]["mechanism"] = "structural"  # ctl.prompt_rule
     _, warnings = run(doc)
     assert has(warnings, "looks like a prompt instruction but is marked structural")
+
+
+def test_property_findings_get_no_credit_from_prompt_instructions():
+    # Rubric 5a: a prompt rule cannot restore provenance, so the floor stays at the inherent tier.
+    doc = property_example()
+    f = doc["findings"][-1]
+    caps = {c["capability_id"]: c for c in doc["capabilities"]}
+    controls = {c["control_id"]: c for c in doc["controls"]}
+    assert validate.residual_floor(f, caps, controls) == "high"
+    f.pop("residual_rationale")  # residual high equals the floor, so no rationale is needed
+    errors, _ = run(doc)
+    assert not has(errors, "f.no_provenance")
