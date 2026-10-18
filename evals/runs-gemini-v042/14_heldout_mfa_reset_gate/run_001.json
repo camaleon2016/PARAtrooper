@@ -1,0 +1,370 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "14_heldout_mfa_reset_gate-run001",
+    "assessed_at": "2026-10-15T19:23:53Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.2",
+      "rubric_version": "0.3.2",
+      "model": "gemini-3.1-pro-preview"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "approval queue"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "helpdesk-agent",
+    "name": "Helpdesk Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.mfa_reset",
+      "action": "credential_access",
+      "target": "idp",
+      "reversibility": "irreversible",
+      "data_sensitivity": "restricted",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.analyst_approval",
+      "credential_scope": "shared_service_account"
+    },
+    {
+      "capability_id": "cap.user_read",
+      "action": "read",
+      "target": "idp",
+      "reversibility": "reversible",
+      "data_sensitivity": "internal",
+      "is_egress": false
+    },
+    {
+      "capability_id": "cap.send_temp_pass",
+      "action": "send_external",
+      "target": "requester",
+      "reversibility": "irreversible",
+      "data_sensitivity": "restricted",
+      "is_egress": true
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.ticket",
+      "source": "Support tickets (including emails from contractors)",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.user_read",
+        "cap.mfa_reset",
+        "cap.send_temp_pass"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A2_act_with_approval_on_sensitive"
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "severity": "high",
+      "evidence_locator": "prompt.md:1-2",
+      "note": "The prompt instructs the agent to send the temporary access pass to the person who opened the ticket, not the account owner. This enables social engineering and account takeover."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "elem.agent",
+      "kind": "process",
+      "refs": [
+        "helpdesk-agent"
+      ]
+    },
+    {
+      "element_id": "elem.ticket",
+      "kind": "data_flow",
+      "crosses_boundary": true,
+      "refs": [
+        "in.ticket"
+      ]
+    },
+    {
+      "element_id": "elem.requester",
+      "kind": "external_entity",
+      "refs": [
+        "in.ticket"
+      ]
+    },
+    {
+      "element_id": "elem.pass_flow",
+      "kind": "data_flow",
+      "crosses_boundary": true,
+      "refs": [
+        "cap.send_temp_pass"
+      ]
+    },
+    {
+      "element_id": "elem.idp",
+      "kind": "data_store",
+      "refs": [
+        "cap.mfa_reset",
+        "cap.user_read"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.analyst_approval",
+      "name": "Service desk analyst approval in the queue tool",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Shows raw action to human approver, so it does not decay with model capability, but effectiveness degrades under the high volume of 400 requests per shift due to approval fatigue.",
+      "covers": [
+        "cap.mfa_reset"
+      ],
+      "status": "declared",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "high",
+      "severs_path": false,
+      "constrains_sink": false
+    },
+    {
+      "control_id": "ctl.recipient_restriction",
+      "name": "Restrict temporary pass recipient to account owner's manager",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced structurally by only allowing egress to the registered manager, bypassing the model's choices entirely.",
+      "covers": [
+        "cap.send_temp_pass"
+      ],
+      "status": "missing_recommended",
+      "severs_path": true,
+      "constrains_sink": true
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "fnd.mfa_hijack",
+      "title": "MFA Reset and Credential Disclosure via Untrusted Ticket",
+      "finding_kind": "path",
+      "horizon": "present",
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "confidence": "high",
+      "attack_path": [
+        {
+          "ref": "in.ticket"
+        },
+        {
+          "ref": "cap.mfa_reset"
+        },
+        {
+          "ref": "cap.send_temp_pass"
+        }
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "elevation_of_privilege",
+        "information_disclosure",
+        "tampering"
+      ],
+      "agentic_class": [
+        "goal_manipulation",
+        "autonomy_abuse"
+      ],
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "Contractors and vendors can email tickets in, making the requester field untrusted."
+        },
+        {
+          "locator": "prompt.md:2",
+          "observation": "Instructs the agent to send the temporary access pass to the person who opened the ticket, not the account owner."
+        }
+      ],
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [
+          "ctl.analyst_approval"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Removal of the analyst approval step or further increase in daily approval volume."
+      },
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Implement a structural restriction on cap.send_temp_pass to only allow sending the temporary pass to the target user's registered manager or an out-of-band contact, ignoring the ticket requester.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ]
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "elem.agent",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not detail authentication or anti-spoofing mechanisms for this element."
+    },
+    {
+      "element_id": "elem.agent",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not describe configuration tampering protections for this element."
+    },
+    {
+      "element_id": "elem.agent",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not mention audit logging or non-repudiation features."
+    },
+    {
+      "element_id": "elem.agent",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.mfa_hijack"
+      ]
+    },
+    {
+      "element_id": "elem.agent",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not specify rate limiting or DoS protections for the agent."
+    },
+    {
+      "element_id": "elem.agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.mfa_hijack"
+      ]
+    },
+    {
+      "element_id": "elem.ticket",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.mfa_hijack"
+      ]
+    },
+    {
+      "element_id": "elem.ticket",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not specify encryption or privacy controls for this data flow."
+    },
+    {
+      "element_id": "elem.ticket",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not specify rate limiting or DoS protections for incoming tickets."
+    },
+    {
+      "element_id": "elem.requester",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.mfa_hijack"
+      ]
+    },
+    {
+      "element_id": "elem.requester",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not mention whether external emails are cryptographically signed."
+    },
+    {
+      "element_id": "elem.pass_flow",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not mention transit integrity controls for the outgoing pass."
+    },
+    {
+      "element_id": "elem.pass_flow",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.mfa_hijack"
+      ]
+    },
+    {
+      "element_id": "elem.pass_flow",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not mention outbound rate limits or DoS protections."
+    },
+    {
+      "element_id": "elem.idp",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.mfa_hijack"
+      ]
+    },
+    {
+      "element_id": "elem.idp",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not clarify how IdP internal data is shielded from disclosure."
+    },
+    {
+      "element_id": "elem.idp",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "The provided artifacts do not describe IdP availability or resilience mechanisms."
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "The agent possesses an S3 capability to reset MFA and send the temporary pass. While protected by human approval, high volume leads to approval fatigue, and the prompt actively instructs the agent to send the pass to the untrusted ticket requester. Inherent risk is critical, residual is high, and forecast remains critical if the human approval gate is removed or volume increases further."
+  },
+  "limitations": [
+    "The assessment reflects declared design and configuration, not observed runtime behavior."
+  ]
+}

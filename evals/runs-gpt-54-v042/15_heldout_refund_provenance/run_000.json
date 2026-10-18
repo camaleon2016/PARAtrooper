@@ -1,0 +1,580 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "15_heldout_refund_provenance-run000",
+    "assessed_at": "2026-10-15T05:20:11Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.2",
+      "rubric_version": "0.3.2",
+      "model": "gpt-5.4"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "on_request"
+  },
+  "subject": {
+    "agent_id": "refunds-agent",
+    "name": "refunds-agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.order_read",
+      "action": "read",
+      "target": "orders history and payment details",
+      "reversibility": "reversible",
+      "data_sensitivity": "confidential",
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.issue_refund",
+      "action": "spend",
+      "target": "payments.issue_refund",
+      "reversibility": "irreversible",
+      "data_sensitivity": "confidential",
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.staff_request",
+      "source": "Requests from support staff (SSO authenticated)",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.order_read",
+        "cap.issue_refund"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1-2",
+      "severity": "moderate",
+      "note": "The prompt authorizes refund processing and says to use judgment on partial refunds without a confirmation step, leaving amount selection and execution broad."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "refunds-agent",
+      "kind": "process",
+      "name": "refunds-agent",
+      "refs": [
+        "refunds-agent"
+      ]
+    },
+    {
+      "element_id": "flow.staff_request",
+      "kind": "data_flow",
+      "name": "Support staff request flow",
+      "refs": [
+        "in.staff_request"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "ext.support_staff",
+      "kind": "external_entity",
+      "name": "Support staff requester",
+      "refs": [
+        "in.staff_request"
+      ]
+    },
+    {
+      "element_id": "flow.refund_execution",
+      "kind": "data_flow",
+      "name": "Refund execution to payments processor",
+      "refs": [
+        "cap.issue_refund"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "store.processor_log",
+      "kind": "data_store",
+      "name": "Payments processor transaction log",
+      "refs": [
+        "store.processor_log"
+      ],
+      "is_audit_record": true
+    },
+    {
+      "element_id": "store.request_record",
+      "kind": "data_store",
+      "name": "Refund request record",
+      "is_audit_record": true
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.processor_log",
+      "name": "Processor transaction log",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund",
+        "store.processor_log"
+      ],
+      "status": "declared",
+      "maestro_layer": "L5_evaluation_observability",
+      "owner": "payments processor"
+    },
+    {
+      "control_id": "ctrl.request_provenance",
+      "name": "Attributable refund request provenance bound to each refund",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund",
+        "store.request_record",
+        "store.processor_log"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "decay_rationale": "A system-bound record of requester identity, request reason, and linkage to the executed refund would restore attribution without relying on model compliance.",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.8",
+          "framework_edition": "2023"
+        },
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AU-10"
+        }
+      ]
+    },
+    {
+      "control_id": "ctrl.human_approval_refund",
+      "name": "Per-refund human approval gate on raw action",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L3_agent_frameworks",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "low",
+      "constrains_sink": true,
+      "decay_rationale": "A blocking approval gate would reduce accidental or abusive irreversible refunds, but it is not present in the declared design.",
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6",
+          "framework_edition": "2023"
+        },
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AC-6"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "fnd.refund_confused_deputy",
+      "title": "Confused deputy (TC4): trusted staff request can trigger irreversible refund through shared service credentials",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.staff_request",
+          "note": "Authenticated support staff request enters the agent as trusted input."
+        },
+        {
+          "ref": "cap.order_read",
+          "note": "The agent reads order history and payment details to decide the refund."
+        },
+        {
+          "ref": "cap.issue_refund",
+          "note": "The agent can issue irreversible refunds up to the order total."
+        }
+      ],
+      "toxic_combination": [
+        "in.staff_request",
+        "cap.issue_refund"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0083",
+          "name": "Credentials from AI Agent Configuration",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "moderate",
+      "residual_risk": "moderate",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal",
+          "model_upgrade",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [],
+        "projected_risk": "moderate",
+        "watch_signal": "No present preventive control is credited on this path; reassess if a new approval gate, credential scope change, or autonomy change is introduced."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-2",
+          "observation": "The prompt directs the agent to check the order and then issue the refund, and says not to ask for confirmation."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The agent calls the payments processor with one shared service account used by every support tool."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Refunds are irreversible once settled, usually within a day."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a per-refund human approval gate showing the raw action, including order, amount, and destination, before cap.issue_refund executes.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Replace the shared service account with requester-bound or narrowly scoped credentials so refund authority is constrained to approved staff context.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "IA-9"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L7_agent_ecosystem",
+        "L3_agent_frameworks"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "fnd.refund_no_provenance",
+      "title": "Missing attributable provenance for irreversible refunds",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.issue_refund",
+        "store.processor_log",
+        "store.request_record"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "control_removal",
+          "autonomy_increase",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "No control currently restores attributable provenance; reassess if logs are shortened further, chat retention changes, or refund volume/autonomy increases."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "The processor log records the service account, the amount, and the order, but not which staff member asked or why."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The agent keeps no record of requests; staff chats are deleted after 7 days."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Refunds are irreversible once settled, usually within a day."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bind each refund to an immutable request record containing staff identity, stated reason, order, amount, and the executed refund reference, and preserve it longer than settlement and review windows.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.8",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AU-10"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "repudiation"
+      ],
+      "agentic_class": [
+        "human_trust_exploitation"
+      ],
+      "maestro_layers": [
+        "L5_evaluation_observability",
+        "L6_security_compliance",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "refunds-agent",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.refund_confused_deputy"
+      ]
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "The provided design exposes no self-configuration, prompt editing, tool definition updates, or writable memory path for this agent."
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.refund_no_provenance"
+      ]
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "The declared design includes order reads and refund execution but no outbound disclosure channel or external data egress capability beyond payment action."
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The artifacts describe a single refund workflow and do not show unbounded loops, recursive delegation, or spend exhaustion conditions beyond the refund action itself."
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.refund_confused_deputy"
+      ]
+    },
+    {
+      "element_id": "ext.support_staff",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "The case says requests are SSO authenticated, but it does not specify identity proof strength, session binding, or anti-impersonation controls."
+    },
+    {
+      "element_id": "ext.support_staff",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.refund_no_provenance"
+      ]
+    },
+    {
+      "element_id": "flow.refund_execution",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not specify transport integrity, API signing, or whether refund requests are protected against in-transit modification."
+    },
+    {
+      "element_id": "flow.refund_execution",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "This boundary flow issues a payment action; the declared evidence does not show payload logging, secret leakage, or external disclosure of customer data on this edge."
+    },
+    {
+      "element_id": "flow.refund_execution",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The provided design does not describe high-volume autonomous execution, queuing, or retry behavior on the processor edge that would support a DoS claim."
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts state what the processor log records but not whether its entries are immutable, signed, or protected from alteration."
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The design does not say who can read the processor log or whether access to refund and order data in the log is restricted."
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "No dependency is shown where loss or saturation of the processor log would itself disrupt refund execution in the declared design."
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.refund_no_provenance"
+      ]
+    },
+    {
+      "element_id": "store.request_record",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "The design explicitly states the agent keeps no request record, so there is no existing store whose contents could be tampered with today."
+    },
+    {
+      "element_id": "store.request_record",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "Because no request record store exists in the current design, there is no present data store exposure to assess for disclosure."
+    },
+    {
+      "element_id": "store.request_record",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "Because the store does not exist in the present design, it cannot presently be exhausted or made unavailable."
+    },
+    {
+      "element_id": "store.request_record",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.refund_no_provenance"
+      ]
+    }
+  ],
+  "rating": {
+    "inherent": "high",
+    "residual": "high",
+    "forecast": "high",
+    "rationale": "Present findings are a moderate path risk from trusted staff requests to an irreversible refund action using shared service credentials, and a high property risk from missing attributable provenance for irreversible refunds. No declared preventive structural control severs or narrows either present risk. Manual validation applied because scripts could not be run."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration artifacts provided here, not observed runtime behavior.",
+    "No tool manifest, source code, API schema, or processor integration details were provided, so transport protections, exact credential scoping enforcement, and runtime approval behavior could not be verified.",
+    "No retention policy or audit system details were provided beyond the notes, so log immutability and reviewer access were not assessed."
+  ]
+}

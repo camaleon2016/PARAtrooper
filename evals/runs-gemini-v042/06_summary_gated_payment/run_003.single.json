@@ -1,0 +1,452 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "06_summary_gated_payment-run003",
+    "assessed_at": "2026-10-15T18:19:55Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.2",
+      "rubric_version": "0.3.2",
+      "model": "gemini-3.1-pro-preview"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "other",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "ap-invoice-agent",
+    "name": "AP Invoice Agent",
+    "trust_domain": "first_party",
+    "model": {
+      "swappable": true
+    }
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.vendor_read",
+      "action": "read",
+      "target": "vendor master",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.bank_update",
+      "action": "write",
+      "target": "vendor bank details",
+      "data_sensitivity": "confidential",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.clerk_approval",
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    },
+    {
+      "capability_id": "cap.schedule_payment",
+      "action": "spend",
+      "target": "erp payments",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "approval_gate_ref": "ctl.clerk_approval",
+      "credential_scope": "broad",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.supplier_invoice",
+      "source": "Supplier portal uploads",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A2_act_with_approval_on_sensitive"
+  },
+  "instructions": [
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:3-4",
+      "severity": "high",
+      "note": "Relying on a prompt to request approval with a summary means the model entirely controls the summary content the approver sees."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "el.agent",
+      "kind": "process",
+      "refs": [
+        "ap-invoice-agent"
+      ]
+    },
+    {
+      "element_id": "el.supplier",
+      "kind": "external_entity",
+      "refs": [
+        "in.supplier_invoice"
+      ]
+    },
+    {
+      "element_id": "el.erp",
+      "kind": "data_store",
+      "refs": [
+        "cap.vendor_read",
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ]
+    },
+    {
+      "element_id": "el.supplier_to_agent",
+      "kind": "data_flow",
+      "refs": [
+        "in.supplier_invoice"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.agent_to_erp",
+      "kind": "data_flow",
+      "refs": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "crosses_boundary": true
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.clerk_approval",
+      "name": "Clerk approval card",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "The gate shows only the model generated summary. A more capable model writes persuasive, selectively incomplete summaries that hide malicious changes (ASI09), and 150 requests per day causes approval fatigue.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "declared",
+      "approval_review_mode": "model_summary",
+      "approval_volume": "high",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.missing_raw_approval",
+      "name": "Raw action approval gate",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Showing the actual bank account and amount to be paid directly from the system of record prevents the model from deceiving the approver.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "low",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.missing_audit_log",
+      "name": "Tamper-evident audit log",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "System of record logs captured independently of the model ensure non-repudiation.",
+      "covers": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "status": "missing_recommended"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "fnd.01",
+      "title": "Summary gated irreversible action (TC9): Fraudulent payment via injected invoice",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.supplier_invoice"
+        },
+        {
+          "ref": "cap.bank_update"
+        },
+        {
+          "ref": "cap.schedule_payment"
+        }
+      ],
+      "toxic_combination": [
+        "in.supplier_invoice",
+        "ctl.clerk_approval",
+        "cap.schedule_payment"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1403",
+          "name": "Consent-Fatigue Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1102",
+          "name": "Prompt Injection",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:3-4",
+          "observation": "Prompt requests approval with a one line summary."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Clerk approves roughly 150 cards per day showing only the model's summary, with no raw bank numbers. Credential can update any vendor."
+        }
+      ],
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "autonomy_increase"
+        ],
+        "failing_controls": [
+          "ctl.clerk_approval"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Model version upgrades or clerk approval volume climbing higher."
+      },
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Switch approval card to show raw action parameters from the system of record (the actual bank account number and payment amount) rather than the model summary.",
+          "priority": "p1",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "elevation_of_privilege",
+        "spoofing",
+        "tampering"
+      ],
+      "agentic_class": [
+        "human_trust_exploitation",
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L2_data_operations",
+        "L6_security_compliance"
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "fnd.02",
+      "title": "Missing property: No tamper-evident action provenance",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.bank_update",
+        "cap.schedule_payment"
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "No mention of attributable audit records mapping bank updates or payments to the agent and the specific input invoice."
+        }
+      ],
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "System task horizons grow or agent operates with higher autonomy."
+      },
+      "recommendations": [
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Implement system of record audit logs tying the agent's identity and original invoice to the executed actions.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "repudiation"
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "el.agent",
+      "category": "spoofing",
+      "status": "not_applicable",
+      "rationale": "No protocol peers or inbound API channels defined for the agent process to be spoofed directly."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "Agent configuration is not writable by the agent itself or by external users."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.02"
+      ]
+    },
+    {
+      "element_id": "el.agent",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "The agent does not host incoming queries that could disclose internal conversational state."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "Agent processes uploaded invoices synchronously without unbounded looping capabilities."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.01"
+      ]
+    },
+    {
+      "element_id": "el.supplier",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.01"
+      ]
+    },
+    {
+      "element_id": "el.supplier",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Authentication and non-repudiation mechanisms for the supplier portal are unknown."
+    },
+    {
+      "element_id": "el.erp",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "fnd.01"
+      ]
+    },
+    {
+      "element_id": "el.erp",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "ERP API data exposure configuration is not provided in the artifacts."
+    },
+    {
+      "element_id": "el.erp",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "ERP API rate limiting behavior is not stated in the runtime notes."
+    },
+    {
+      "element_id": "el.supplier_to_agent",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "File upload integrity checks are not detailed in the artifacts."
+    },
+    {
+      "element_id": "el.supplier_to_agent",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Portal TLS or equivalent encryption details are missing from the documentation."
+    },
+    {
+      "element_id": "el.supplier_to_agent",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Portal upload rate limiting is not described in the given artifacts."
+    },
+    {
+      "element_id": "el.agent_to_erp",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Internal network transport security and integrity checks are not documented."
+    },
+    {
+      "element_id": "el.agent_to_erp",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Internal API connection encryption details (e.g. mTLS) are not provided."
+    },
+    {
+      "element_id": "el.agent_to_erp",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "Internal network bandwidth is not considered a viable constraint or vector for this workflow."
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "Inherent risk is critical because untrusted external invoices reach irreversible S3 spending capabilities. The structural approval gate only earns -1 tier of residual credit because it relies on high volume (150/day) model summaries, leaving the agent vulnerable to deception and fatigue (residual: high). A forecast model upgrade defeats this behavioral summary gate entirely, projecting risk back to critical."
+  },
+  "limitations": [
+    "The assessment reflects declared design and configuration, not observed runtime behavior.",
+    "Internal mechanics of the ERP and external supplier portal are treated as black boxes due to missing artifacts."
+  ]
+}
