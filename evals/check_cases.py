@@ -5,7 +5,7 @@ Exit code 0 = consistent, 1 = problems found.
 
 This does not run the skill. It catches drift: an expected file that names an id the case never
 defines, a trigger or tier the schema does not allow, a case with no expected file, or a MITRE ATLAS
-or SAFE-MCP id that does not exist in the pinned edition under evals/data/.
+or SAF-MCP id that does not exist in the pinned edition under evals/data/.
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ def load_ids(name: str) -> set[str]:
 
 
 def check_framework_ids() -> list[str]:
-    """Every ATLAS and SAFE-MCP id cited in the repo must exist in the pinned edition."""
-    atlas, safe = load_ids("atlas_ids_2026.09.tsv"), load_ids("safe_mcp_ids.tsv")
+    """Every ATLAS and SAF-MCP id cited in the repo must exist in the pinned edition."""
+    atlas, safe = load_ids("atlas_ids_2026.09.tsv"), load_ids("saf_mcp_ids.tsv")
     retired_note = "formerly AML.T0104"
     problems: list[str] = []
     for pattern in ID_SCAN:
@@ -48,7 +48,7 @@ def check_framework_ids() -> list[str]:
             text = path.read_text(encoding="utf-8").replace(retired_note, "")
             rel = path.relative_to(ROOT).as_posix()
             problems += [f"{rel}: {i} not in ATLAS 2026.09" for i in sorted(set(ATLAS_ID.findall(text)) - atlas)]
-            problems += [f"{rel}: {i} not in pinned SAFE-MCP catalog" for i in sorted(set(SAFE_ID.findall(text)) - safe)]
+            problems += [f"{rel}: {i} not in pinned SAF-MCP catalog" for i in sorted(set(SAFE_ID.findall(text)) - safe)]
     return problems
 
 

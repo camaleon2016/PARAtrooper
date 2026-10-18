@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.3 (unreleased)
+
+Follows the SAFE-MCP project's rename to SAF-MCP. Schema 0.6.1. Rubric unchanged (0.3.2); rating behavior is unchanged, so the v0.4.2 results still describe the skill.
+
+### Changed
+- SAF-MCP replaces SAFE-MCP throughout the skill, crosswalk, and protocol checks. Technique ids keep the `SAFE-T` prefix, as upstream does.
+- The pinned catalog is refreshed from `camaleon2016/SAF-MCP-skill` at commit 62e85d5 (2026-10-17): 86 techniques, 78 active and 8 deprecated. It is now `evals/data/saf_mcp_ids.tsv` and records each technique's lifecycle status.
+- Crosswalk: five techniques take their new names (for example, SAFE-T1201 is now Post-Approval Tool Mutation, formerly MCP Rug Pull Attack). Deprecated techniques are marked and removed from the key column (ASI02 now lists SAFE-T1302 instead of SAFE-T1104; ASI06 lists SAFE-T3001 instead of SAFE-T1702). The new technique SAFE-T1112, Sampling Request Abuse, is assigned to ASI01.
+
+### Added
+- Schema 0.6.1: the `SAF_MCP` framework value. `SAFE_MCP` stays valid so earlier assessments keep validating; from schema 0.6.1 the validator warns when a new assessment uses it.
+
 ## 0.4.2 (2026-10-18)
 
 Measured on three model families: Claude (single shot), GPT-5.4 and Gemini 3.1 Pro preview (one repair round each). Main path agreement was 100% in every case on Claude and Gemini; recall on cases 01 to 13 was 96%, 95%, and 91%. See `evals/runs-claude-v042/`, `evals/runs-gpt-54-v042/`, and `evals/runs-gemini-v042/`.

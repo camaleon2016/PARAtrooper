@@ -4,7 +4,7 @@ license: Apache-2.0
 compatibility: Runs on any agent platform that supports Agent Skills. Validation and reports need Python 3.10+ (jsonschema optional); without code execution, use references/validation_checklist.md.
 metadata:
   author: Jay White
-  version: "0.4.2"
+  version: "0.4.3"
   repository: https://github.com/camaleon2016/PARAtrooper
 description: Preemptive risk assessment for AI agents, MCP servers, and agent to agent designs. Use whenever the user shares a system prompt, tool list, MCP configuration, agent card, or agent architecture and wants risk rated, controls evaluated, security gaps found, or future risk predicted, even if they only ask "is this agent safe" or "review my agent."
 ---
@@ -64,7 +64,7 @@ Scan the system prompt for these issue types: `ambiguous_goal`, `conflicting_dir
 
 ### 6. Review protocols
 
-Load `references/protocols.md`. Record each MCP, A2A, or API connection in `protocols[]` and apply the checks. Use SAFE-MCP technique ids for MCP.
+Load `references/protocols.md`. Record each MCP, A2A, or API connection in `protocols[]` and apply the checks. Use SAF-MCP (formerly SAF-MCP) technique ids, which keep the `SAFE-T` prefix, with framework value `SAF_MCP`, for MCP.
 
 ### 7. Classify controls
 
@@ -103,7 +103,7 @@ Roll up to `rating` (section 7). Add structural recommendations first. Set `trea
 
 1. Write the JSON, using only the values the schema lists. Three fields are easy to confuse:
    - `protocols[].peer_trust_level` is `trusted`, `internal`, `untrusted`, or `unknown`. A third party or external peer is `untrusted` (or `unknown`). `third_party` is a value of `subject.trust_domain` only.
-   - `threat_refs` holds threat frameworks: OWASP, MITRE ATLAS, SAFE-MCP, CoSAI. `governance_refs` holds governance and control frameworks: NIST AI RMF, ISO/IEC 42001, NIST SP 800-53.
+   - `threat_refs` holds threat frameworks: OWASP, MITRE ATLAS, SAF-MCP (`SAF_MCP`), CoSAI. `governance_refs` holds governance and control frameworks: NIST AI RMF, ISO/IEC 42001, NIST SP 800-53.
    - Element, attack path, and coverage references are ids from the document, never URLs, file paths, or package names.
 
    Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.

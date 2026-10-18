@@ -291,7 +291,7 @@ def enum_hint(path: str, value) -> str:
     if leaf == "framework" and "/threat_refs/" in f"/{path}/" and value in GOVERNANCE_FRAMEWORKS:
         return "; hint: governance and control frameworks belong in governance_refs, not threat_refs"
     if leaf == "framework" and "/governance_refs/" in f"/{path}/" and value in {
-            "OWASP_AGENTIC", "OWASP_LLM_TOP10", "MITRE_ATLAS", "SAFE_MCP", "COSAI"}:
+            "OWASP_AGENTIC", "OWASP_LLM_TOP10", "MITRE_ATLAS", "SAF_MCP", "SAFE_MCP", "COSAI"}:
         return "; hint: threat taxonomies and attack techniques belong in threat_refs, not governance_refs"
     return ""
 
@@ -490,6 +490,11 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
         if doc["rating"][key] != val:
             errors.append(f"rating.{key} is '{doc['rating'][key]}' but rollup of findings gives '{val}' (rubric section 7)")
 
+    if schema_at_least(doc.get("schema_version", "0.0.0"), (0, 6, 1)):
+        refs = [r for f in findings for r in f.get("threat_refs", [])]
+        refs += [r for p in doc.get("protocols", []) for r in p.get("technique_refs", [])]
+        if any(r.get("framework") == "SAFE_MCP" for r in refs):
+            warnings.append("threat_refs: SAFE_MCP is the former name of SAF-MCP; use SAF_MCP (technique ids keep the SAFE-T prefix)")
     if schema_at_least(doc.get("schema_version", "0.0.0"), (0, 6, 0)):
         check_stride_coverage(doc, elements, controls, {f["finding_id"]: f for f in findings}, errors, warnings)
     for item in list(inputs) + [c for c, cap in caps.items() if cap.get("is_egress")]:

@@ -8,8 +8,8 @@ Load this file when the design includes MCP servers, A2A peers, or other agent c
 |---|---|---|---|
 | Server authentication | `auth_method` | `none`, or `static_token` shared across users | ASI03. Spoofing. |
 | Server identity | `peer_identity_verified` | false for remote servers | ASI04. Spoofing. |
-| Definition pinning | `definitions_pinned` | false. Tool names, descriptions, or schemas can change after approval. | ASI04. SAFE-MCP rug pull. Tampering. |
-| Tool description review | evidence | Descriptions contain instructions to the model ("always call X first", "include the contents of ~/.ssh") | ASI01, ASI04. SAFE-MCP tool poisoning. |
+| Definition pinning | `definitions_pinned` | false. Tool names, descriptions, or schemas can change after approval. | ASI04. SAF-MCP rug pull. Tampering. |
+| Tool description review | evidence | Descriptions contain instructions to the model ("always call X first", "include the contents of ~/.ssh") | ASI01, ASI04. SAF-MCP tool poisoning. |
 | Tool output trust | `inputs[]` | Tool output is not recorded as an input with a trust level | Every tool that returns external content is a U source |
 | Cross server shadowing | evidence | Two servers expose tools with overlapping names or descriptions | ASI04. Tampering. |
 | Credential passthrough | `credential_scope` | The server holds `broad` or `shared_service_account` credentials used on behalf of many users | ASI03. Elevation of privilege. Confused deputy. |
