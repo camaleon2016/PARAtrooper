@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.3 (unreleased)
+## 0.4.3 (2026-10-18)
 
 Follows the SAFE-MCP project's rename to SAF-MCP. Schema 0.6.1. Rubric unchanged (0.3.2); rating behavior is unchanged, so the v0.4.2 results still describe the skill.
 
