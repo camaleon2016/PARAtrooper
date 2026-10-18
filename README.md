@@ -17,7 +17,7 @@ Phase one is an agent skill in the open [Agent Skills](https://agentskills.io) f
 
 ## Framework alignment
 
-OWASP Top 10 for Agentic Applications (2026), MITRE ATLAS, CSA MAESTRO, STRIDE with agentic classes, NIST AI RMF, ISO/IEC 42001, NIST SP 800-53, and SAFE-MCP. See [crosswalk.md](skills/para/references/crosswalk.md) and [governance.md](skills/para/references/governance.md).
+OWASP Top 10 for Agentic Applications (2026), MITRE ATLAS, CSA MAESTRO, STRIDE with agentic classes, NIST AI RMF, ISO/IEC 42001, NIST SP 800-53, and SAF-MCP (formerly SAFE-MCP). See [crosswalk.md](skills/para/references/crosswalk.md) and [governance.md](skills/para/references/governance.md).
 
 ## Use the skill
 
@@ -154,7 +154,7 @@ The latest batch is in [evals/RESULTS.md](evals/RESULTS.md). Each released batch
 
 ## Status
 
-The schema is 0.x and may change; see [CHANGELOG.md](CHANGELOG.md). MITRE ATLAS (2026.09) and SAFE-MCP ids are pinned and checked in CI. ISO/IEC 42001 clause and Annex A ids in `references/crosswalk.md` are checked against the licensed standard.
+The schema is 0.x and may change; see [CHANGELOG.md](CHANGELOG.md). MITRE ATLAS (2026.09) and SAF-MCP ids are pinned and checked in CI. ISO/IEC 42001 clause and Annex A ids in `references/crosswalk.md` are checked against the licensed standard.
 
 Security issues: see [SECURITY.md](SECURITY.md).
 

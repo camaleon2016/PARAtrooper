@@ -986,3 +986,17 @@ def test_property_findings_get_no_credit_from_prompt_instructions():
     f.pop("residual_rationale")  # residual high equals the floor, so no rationale is needed
     errors, _ = run(doc)
     assert not has(errors, "f.no_provenance")
+
+
+def test_saf_mcp_framework_value_and_former_name():
+    doc = example()
+    doc["findings"][0]["threat_refs"].append({"framework": "SAF_MCP", "id": "SAFE-T1001", "framework_edition": "62e85d5"})
+    errors, warnings = run(doc)
+    assert not errors and not has(warnings, "former name")
+    doc["findings"][0]["threat_refs"][-1]["framework"] = "SAFE_MCP"
+    errors, warnings = run(doc)
+    assert not errors and has(warnings, "SAFE_MCP is the former name of SAF-MCP")
+    doc["schema_version"] = "0.6.0"  # earlier assessments are not warned
+    _, warnings = run(doc)
+    assert not has(warnings, "former name")
+    assert "SAFE-T1112" in check_cases.load_ids("saf_mcp_ids.tsv")
