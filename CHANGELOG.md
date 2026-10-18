@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.2 (unreleased)
+## 0.4.2 (2026-10-18)
 
 Measured on three model families: Claude (single shot), GPT-5.4 and Gemini 3.1 Pro preview (one repair round each). Main path agreement was 100% in every case on Claude and Gemini; recall on cases 01 to 13 was 96%, 95%, and 91%. See `evals/runs-claude-v042/`, `evals/runs-gpt-54-v042/`, and `evals/runs-gemini-v042/`.
 
