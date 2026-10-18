@@ -128,20 +128,21 @@ Use one `--out` folder per model. Each run records token use and cost in a `run_
 
 ### Across models
 
-v0.4.x, 16 cases (13 earlier cases plus 3 held out cases written before v0.4.0 was built), with the same skill, rubric, and schema:
+v0.4.2, 16 cases (13 earlier cases plus 3 held out cases written before v0.4.0 was built), with the same skill, rubric, and schema on three model families:
 
-| Measure | Claude (claude-sonnet-5) | GPT-5.4 (Azure) | GPT-5.4 with one repair round |
+| Measure | Claude (claude-sonnet-5) | GPT-5.4 (Azure) | Gemini (3.1 Pro preview) |
 |---|---|---|---|
 | Runs per case | 3 | 5 | 5 |
-| Mean recall, cases 01 to 13 | 99% | 97% | 96% |
-| Held out mean recall | 89% | 97% | 92% |
-| Validator clean | 98% | 65% | **100%** (79% first attempt) |
-| Runs with a false positive | 1 of 48 | 0 of 80 | 0 of 80 |
-| Lowest main path residual agreement | 100% | 60% (one case) | 40% (held out case 14) |
-| GitHub and Supabase MCP backtests: recall, main path agreement | 100%, 100% | 100%, 100% | 100%, 100% |
-| Mean output tokens per assessment | 43,559 | 5,836 | 7,154 |
+| Repair rounds | 0 (single shot) | 1 | 1 |
+| Mean recall, cases 01 to 13 | 96% | 95% | 91% |
+| Held out mean recall | 93% | 93% | 82% |
+| Main path residual agreement | **100% in every case** | 80% or more except two cases at 60% | **100% in every case** |
+| Validator clean | 75% | 99% (51% first attempt) | 99% (59% first attempt) |
+| Runs with a false positive | 0 of 48 | 1 of 80 | 0 of 80 |
+| GitHub and Supabase MCP backtests | 100% recall, critical every run | 100% recall, critical every run | 88% recall, critical every run |
+| Mean output tokens per assessment | 45,182 | 9,849 | 6,415 |
 
-The repair round mirrors how the skill runs on agent platforms: the model sees its own validator errors and corrects them. Details: [Claude v0.4.0](evals/runs-claude-v040/RESULTS_NOTES.md), [GPT-5.4 v0.4.0](evals/runs-gpt-54-v040/RESULTS_NOTES.md), and [GPT-5.4 with repair, v0.4.1](evals/runs-gpt-54-v041-repair/RESULTS_NOTES.md). Rounds before the v0.4.0 release: [evals/archive/0.4.0-pre/](evals/archive/0.4.0-pre/NOTES.md).
+The repair round mirrors how the skill runs on agent platforms, where it validates its own output and corrects it; Claude ran without it. The Gemini results come from a preview model and may not reproduce. Details: [Claude](evals/runs-claude-v042/RESULTS_NOTES.md), [GPT-5.4](evals/runs-gpt-54-v042/RESULTS_NOTES.md), [Gemini](evals/runs-gemini-v042/RESULTS_NOTES.md). Earlier versions: [v0.4.0 Claude](evals/runs-claude-v040/RESULTS_NOTES.md), [v0.4.0 GPT-5.4](evals/runs-gpt-54-v040/RESULTS_NOTES.md), [v0.4.1 GPT-5.4 with repair](evals/runs-gpt-54-v041-repair/RESULTS_NOTES.md).
 
 ### By version
 

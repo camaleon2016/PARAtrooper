@@ -1,0 +1,533 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "12_repudiation_shared_identity-run001",
+    "assessed_at": "2026-10-16T01:41:37Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.2",
+      "rubric_version": "0.3.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "deploy-assistant",
+    "name": "Deploy Assistant",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.prod_deploy",
+      "action": "write",
+      "target": "production service deployment",
+      "data_sensitivity": "internal",
+      "reversibility": "partially_reversible",
+      "is_egress": false,
+      "credential_scope": "user_delegated",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.db_migrate",
+      "action": "execute",
+      "target": "production database migration",
+      "data_sensitivity": "internal",
+      "reversibility": "irreversible",
+      "is_egress": false,
+      "credential_scope": "user_delegated",
+      "maestro_layer": "L4_deployment_infrastructure"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.engineer_request",
+      "source": "On-call engineer's chat request (SSO authenticated)",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.prod_deploy",
+        "cap.db_migrate"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1-2",
+      "severity": "moderate",
+      "note": "The agent will deploy or migrate 'the named service' on request with no allowlist of services, environments, or migration types, and no stated boundary on what counts as an in-scope production target."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:3",
+      "severity": "high",
+      "note": "The only check on irreversible production actions is the instruction to skip confirmation ('Do not ask for confirmation; the engineer is busy'). There is no structural approval step behind this; safety depends entirely on the model following this line."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "deploy-assistant",
+      "kind": "process",
+      "name": "Deploy Assistant agent",
+      "refs": [
+        "deploy-assistant",
+        "cap.prod_deploy",
+        "cap.db_migrate",
+        "in.engineer_request"
+      ]
+    },
+    {
+      "element_id": "ext.on_call_engineer",
+      "kind": "external_entity",
+      "name": "On-call engineer (human)",
+      "refs": [
+        "in.engineer_request"
+      ]
+    },
+    {
+      "element_id": "flow.engineer_request",
+      "kind": "data_flow",
+      "name": "Chat request from engineer to agent",
+      "refs": [
+        "in.engineer_request"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "store.chat_history",
+      "kind": "data_store",
+      "name": "Chat transcript history",
+      "refs": [
+        "in.engineer_request"
+      ],
+      "is_audit_record": true
+    },
+    {
+      "element_id": "store.cloud_audit_log",
+      "kind": "data_store",
+      "name": "Cloud audit log",
+      "refs": [
+        "cap.prod_deploy",
+        "cap.db_migrate"
+      ],
+      "is_audit_record": true
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "control.sso_auth",
+      "name": "SSO authentication for chat access",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Identity verification happens at the SSO layer, outside the model; a more capable model cannot forge SSO authentication. It verifies who is talking to the agent, but does not address attribution of the agent's own actions or throttle how many actions it takes.",
+      "covers": [
+        "in.engineer_request",
+        "deploy-assistant"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance",
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "IA-2"
+        }
+      ]
+    },
+    {
+      "control_id": "control.action_provenance",
+      "name": "Tamper-evident, agent-distinguishing action provenance (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not present. If added as a store-enforced tag independent of model output, it would not decay with model capability.",
+      "covers": [
+        "cap.prod_deploy",
+        "cap.db_migrate",
+        "store.cloud_audit_log"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance"
+    },
+    {
+      "control_id": "control.step_rate_limit",
+      "name": "Per-session rate/step limit on production actions (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not present. A runtime-enforced cap on actions per session would not decay with model capability, though it only narrows rather than severs the path.",
+      "covers": [
+        "cap.prod_deploy",
+        "cap.db_migrate"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "control.approval_gate_migration",
+      "name": "Raw-action, low-volume human approval gate before irreversible migrations (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not present. The system prompt explicitly instructs the agent to skip confirmation, so no gate exists today.",
+      "covers": [
+        "cap.db_migrate"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "low",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "control.immutable_chat_log",
+      "name": "Immutable, non-deletable request log (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Not present. Today the only record of intent is a transcript the requesting engineer can delete, which undermines any later attribution analysis.",
+      "covers": [
+        "store.chat_history"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L2_data_operations"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "find.repudiation_shared_identity",
+      "title": "Shared identity and deletable request log erase attribution for irreversible production actions (repudiation)",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.prod_deploy",
+        "cap.db_migrate",
+        "store.chat_history",
+        "store.cloud_audit_log"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "longer_task_horizon",
+          "control_removal"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "No currently credited control covers this gap, so the triggers do not change the tier; watch instead for whether a tamper-evident, agent-specific provenance control or an immutable request log is ever added, which would be the first thing to track for improvement rather than decay."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "Every production action is recorded in the cloud audit log under the engineer's name, so agent-initiated actions are indistinguishable from actions the engineer personally performed."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The only record of what the agent was asked and why it acted is the chat transcript, and engineers can delete their own chat history, removing the sole evidence of intent while the audit log still attributes the resulting production action to that same engineer."
+        },
+        {
+          "locator": "prompt.md:3",
+          "observation": "The system prompt instructs the agent not to ask for confirmation, removing any human checkpoint that could catch a misattributed or unintended irreversible action before it is logged solely under the engineer's identity."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Record agent-initiated production actions with a tamper-evident provenance tag, enforced by the audit store rather than the model, that distinguishes them from the engineer's own direct actions.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AU-10"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Make the chat transcript (or an equivalent instruction log) immutable and retained independently of the requesting engineer's ability to delete it, so the original request can always be reviewed against the resulting action.",
+          "priority": "p1",
+          "audience": "both"
+        }
+      ],
+      "stride": [
+        "repudiation",
+        "tampering"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure",
+        "L6_security_compliance"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        },
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "AC-2"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "find.no_action_limit",
+      "title": "No rate, step, or runtime limit on irreversible production deploy/migration actions",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.prod_deploy",
+        "cap.db_migrate"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0029",
+          "name": "Denial of AI Service",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "longer_task_horizon",
+          "control_removal"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "No step, rate, or runtime limit exists today, so these triggers do not change the tier. Watch for autonomy.level moving toward A4 or multi-day sessions, which would make an already-unbounded capability worse in practice even though the rated tier is already at its property-finding cap."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "The agent acts using the engineer's personal access token with no stated limit on the number of deploys or migrations it may run in a session."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "The agent is directed to act immediately on any named service or migration without confirmation, with no stated cap on how many such irreversible actions it can take per session or per hour."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Impose a per-session or per-day limit on the number of production deploy/migration actions the agent will execute without additional review, and set explicit max_unattended_steps and max_runtime_minutes.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add a raw-action human approval gate, scoped to low volume, specifically before irreversible database migrations, rather than relying on the current instruction to never ask for confirmation.",
+          "priority": "p1",
+          "audience": "both"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "SC-5"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "deploy-assistant",
+      "category": "spoofing",
+      "status": "mitigated",
+      "control_ids": [
+        "control.sso_auth"
+      ]
+    },
+    {
+      "element_id": "deploy-assistant",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not describe whether the system prompt or deployment tooling is protected from modification, so instruction or configuration integrity cannot be assessed."
+    },
+    {
+      "element_id": "deploy-assistant",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "find.repudiation_shared_identity"
+      ]
+    },
+    {
+      "element_id": "deploy-assistant",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "The agent has no egress capability (is_egress is false on both capabilities) and processes no external or untrusted content, so it has no channel to disclose data externally."
+    },
+    {
+      "element_id": "deploy-assistant",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "find.no_action_limit"
+      ]
+    },
+    {
+      "element_id": "deploy-assistant",
+      "category": "elevation_of_privilege",
+      "status": "not_applicable",
+      "rationale": "The agent acts with the requesting engineer's own personal access token (credential_scope user_delegated), so it holds no broader privilege than the requesting principal."
+    },
+    {
+      "element_id": "ext.on_call_engineer",
+      "category": "spoofing",
+      "status": "mitigated",
+      "control_ids": [
+        "control.sso_auth"
+      ]
+    },
+    {
+      "element_id": "ext.on_call_engineer",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "find.repudiation_shared_identity"
+      ]
+    },
+    {
+      "element_id": "store.chat_history",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "find.repudiation_shared_identity"
+      ]
+    },
+    {
+      "element_id": "store.chat_history",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not describe access controls or encryption for the chat history store, so disclosure risk cannot be assessed."
+    },
+    {
+      "element_id": "store.chat_history",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "No information on storage limits or exposure to flooding is provided for the chat transcript store."
+    },
+    {
+      "element_id": "store.chat_history",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "find.repudiation_shared_identity"
+      ]
+    },
+    {
+      "element_id": "store.cloud_audit_log",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not state whether the cloud audit log is immutable or append-only, so tamper resistance cannot be confirmed."
+    },
+    {
+      "element_id": "store.cloud_audit_log",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "No information is provided on access controls for the cloud audit log, so disclosure risk cannot be assessed."
+    },
+    {
+      "element_id": "store.cloud_audit_log",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "No information on log retention or resilience to flooding is provided for the cloud audit log."
+    },
+    {
+      "element_id": "store.cloud_audit_log",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "find.repudiation_shared_identity"
+      ]
+    }
+  ],
+  "rating": {
+    "inherent": "high",
+    "residual": "high",
+    "forecast": "high",
+    "rationale": "Inherent and residual risk are both high, driven by two property gaps on the irreversible production database migration capability (and, to a lesser extent, the partially reversible deploy capability): (1) shared identity plus a deletable sole record of intent erases attribution between agent-initiated and human-initiated actions (repudiation), and (2) no step, rate, or runtime limit bounds how many such actions can be taken in a session (denial of service / cascading failure exposure). Both affect consequential, irreversible or near-irreversible capabilities, so they are rated under rubric 5a's I-row base plus the autonomy modifier, capped at high. The only declared control (SSO authentication) verifies who is talking to the agent but does nothing to restore attributability or throttle actions, so it earns no credit toward either finding, and residual equals inherent for both. The forecast stays high under autonomy_increase, longer_task_horizon, and control_removal: none of these triggers degrade an existing control, because no control currently covers either gap. The single change that would move the forecast most is not a decaying control but the absence of one: adding a tamper-evident, agent-distinguishing provenance record and a hard step/rate limit would be the first controls to name in any future reassessment."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in the provided prompt and runtime notes, not observed runtime behavior of the deployed agent.",
+    "No tool manifest, MCP configuration, or IaC was provided; capability scope (which services or databases can be targeted) is inferred from the system prompt alone.",
+    "The artifacts do not describe SSO/MFA strength, cloud audit log immutability, or chat history access controls; several STRIDE categories are marked not_assessed as a result and would need runtime or configuration evidence to close."
+  ]
+}

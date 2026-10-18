@@ -1,0 +1,596 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "10_backtest_github_mcp-run002",
+    "assessed_at": "2026-10-16T01:04:36Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.2",
+      "rubric_version": "0.3.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "mcp_config",
+        "locator": "configuration: mcpServers.github"
+      },
+      {
+        "artifact_type": "documentation",
+        "locator": "runtime notes (token scope, public issue access, approval UX)"
+      },
+      {
+        "artifact_type": "other",
+        "locator": "user prompt: 'Have a look at the open issues in my public repo.'"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "desktop-github-agent",
+    "name": "Desktop GitHub agent (GitHub MCP server client)",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.read_private_repo",
+      "tool_ref": "github-mcp-server: get_file_contents",
+      "action": "read",
+      "target": "Private repositories owned by the user, via get_file_contents",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "approval_gate_ref": "ctl.tool_call_prompt",
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.create_pr_public",
+      "tool_ref": "github-mcp-server: create_pull_request",
+      "action": "write",
+      "target": "The public repository, via create_pull_request",
+      "data_sensitivity": "public",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "approval_gate_ref": "ctl.tool_call_prompt",
+      "credential_scope": "broad",
+      "maestro_layer": "L3_agent_frameworks"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.user_request",
+      "source": "User's chat message in the desktop client",
+      "trust_level": "trusted"
+    },
+    {
+      "input_id": "in.public_issue",
+      "source": "Open issues in the public GitHub repository, authored by any GitHub user",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.read_private_repo",
+        "cap.create_pr_public"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A1_act_with_approval_each_step",
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "runtime notes: token scope; user prompt",
+      "severity": "high",
+      "note": "The user's request only asks the agent to look at public-repo issues, but the agent's wired capabilities and credential (a single PAT with repo scope across all repos) extend far beyond that task, with nothing that scopes tool use to the request."
+    }
+  ],
+  "protocols": [
+    {
+      "protocol": "mcp",
+      "peer_ref": "el.github_mcp_server",
+      "direction": "bidirectional",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "untrusted",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "desktop-github-agent",
+      "kind": "process",
+      "name": "Desktop GitHub agent"
+    },
+    {
+      "element_id": "el.user_request_flow",
+      "kind": "data_flow",
+      "name": "User request channel",
+      "refs": [
+        "in.user_request"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "el.public_issue_flow",
+      "kind": "data_flow",
+      "name": "Public issue content ingestion",
+      "refs": [
+        "in.public_issue"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.github_issue_author",
+      "kind": "external_entity",
+      "name": "Any GitHub user able to open issues on the public repo",
+      "refs": [
+        "in.public_issue"
+      ]
+    },
+    {
+      "element_id": "el.create_pr_flow",
+      "kind": "data_flow",
+      "name": "create_pull_request egress to the public repo",
+      "refs": [
+        "cap.create_pr_public"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "el.github_mcp_server",
+      "kind": "process",
+      "name": "GitHub MCP server (docker container)",
+      "refs": [
+        "cap.read_private_repo",
+        "cap.create_pr_public"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.tool_call_prompt",
+      "name": "Per-tool-call approval prompt (client)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "partially_dependent",
+      "decay_rationale": "The approver sees a collapsed summary rather than raw arguments by default (model_summary), so a more persuasive or selectively incomplete model-written summary can induce approval (ASI09); approving many calls per session also produces approval fatigue (SAFE-T1403), under which reviewers click through routine-looking requests.",
+      "covers": [
+        "cap.read_private_repo",
+        "cap.create_pr_public"
+      ],
+      "status": "declared",
+      "maestro_layer": "L4_deployment_infrastructure",
+      "approval_review_mode": "model_summary",
+      "approval_volume": "high",
+      "severs_path": false,
+      "constrains_sink": false
+    },
+    {
+      "control_id": "ctl.scoped_pat",
+      "name": "Repository-scoped credential (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "A credential scoped only to the public repository would make private repository contents unreachable from this agent regardless of model behavior; no such scoping exists today, since the single PAT carries repo scope across all repositories.",
+      "covers": [
+        "cap.read_private_repo"
+      ],
+      "status": "missing_recommended",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.destination_confirmation",
+      "name": "Destination confirmation bound to the record (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Confirming the PR destination and content against a system-of-record allowlist, outside model output, would narrow or sever the egress path; no such check exists today.",
+      "covers": [
+        "cap.create_pr_public"
+      ],
+      "status": "missing_recommended",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.pin_mcp_image",
+      "name": "Pinned and verified MCP server image (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Pinning the server image by digest and verifying publisher identity would make silent tool redefinition infeasible regardless of model behavior; the current docker run command references the image with no tag or digest.",
+      "covers": [
+        "cap.read_private_repo",
+        "cap.create_pr_public"
+      ],
+      "status": "missing_recommended"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f.lethal_trifecta_private_repo_exfil",
+      "title": "Lethal trifecta (TC1): public issue content drives private-repo read and public-PR exfiltration",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.public_issue"
+        },
+        {
+          "ref": "cap.read_private_repo",
+          "note": "Issue content can instruct the agent to read private repository contents using the broad-scope token."
+        },
+        {
+          "ref": "cap.create_pr_public",
+          "note": "The agent opens a pull request on the public repo, visible to the attacker who authored the issue, carrying the private data read upstream."
+        }
+      ],
+      "toxic_combination": [
+        "in.public_issue",
+        "cap.read_private_repo",
+        "cap.create_pr_public"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI01",
+          "name": "Agent Goal Hijack",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0051.001",
+          "name": "LLM Prompt Injection: Indirect",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1401",
+          "name": "Line Jumping",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1104",
+          "name": "Over-Privileged Tool Abuse",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1914",
+          "name": "Tool-to-Tool Exfil",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "model_upgrade",
+          "autonomy_increase",
+          "control_removal"
+        ],
+        "failing_controls": [
+          "ctl.tool_call_prompt"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Model or version string changes in client config; the approval UI switches to an 'always allow' or remembered mode; per-reviewer approval volume rises above roughly 20/day; or the per-call gate is removed or narrowed."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "configuration: mcpServers.github",
+          "observation": "A single GitHub MCP server is configured with one personal access token passed by env var; there is no per-repository credential separation."
+        },
+        {
+          "locator": "runtime notes: token scope",
+          "observation": "The personal access token has repo scope across every repository the user owns, public and private, so any tool call using it can read private repository contents."
+        },
+        {
+          "locator": "runtime notes: public issue access",
+          "observation": "Anyone on GitHub can open issues in the public repository, making issue content an untrusted, attacker-reachable input."
+        },
+        {
+          "locator": "runtime notes: approval UX",
+          "observation": "The client asks for approval per tool call, but arguments are collapsed by default (model_summary) and users approve many calls per session (high volume), the approval-fatigue pattern behind SAFE-T1403."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Issue a fine-grained PAT scoped only to the public repository the agent is meant to operate on; never use a single token with repo scope across private repositories for a public-facing issue-triage agent.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ]
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require destination confirmation bound to the system of record before any create_pull_request call reaches a public repository, enforced outside model output.",
+          "priority": "p1",
+          "audience": "developer"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "behavioral",
+          "action": "Change the approval UI to show raw arguments rather than a collapsed summary, and require individual, low-volume review for any call touching a private repository.",
+          "priority": "p2",
+          "audience": "both"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "information_disclosure",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "goal_manipulation"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f.unpinned_mcp_server_image",
+      "title": "Unpinned GitHub MCP server image allows silent tool redefinition (ASI04)",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.read_private_repo",
+        "cap.create_pr_public"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI04",
+          "name": "Agentic Supply Chain Vulnerabilities",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1201",
+          "name": "MCP Rug Pull Attack",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "new_mcp_server",
+          "control_removal"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "Image tag or digest pin added or removed in config; a new MCP server added without review."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "configuration: mcpServers.github args",
+          "observation": "The docker run command references ghcr.io/github/github-mcp-server with no version tag or digest, so the resolved image can change between runs without review, and server identity is not verified (peer_identity_verified: false)."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Pin the MCP server image by digest and verify publisher signature before each run.",
+          "priority": "p2",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "tampering",
+        "spoofing"
+      ],
+      "maestro_layers": [
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "SR-3"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "desktop-github-agent",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe how the desktop agent process itself is authenticated to the user's machine or any identity provider."
+    },
+    {
+      "element_id": "desktop-github-agent",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "The agent cannot modify its own configuration (can_modify_own_config: false) and has no declared persistence capability, so there is no tampering surface on the process itself beyond the already-covered data flows."
+    },
+    {
+      "element_id": "desktop-github-agent",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state whether approved tool calls are logged with attributable records beyond the approval prompt itself."
+    },
+    {
+      "element_id": "desktop-github-agent",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    },
+    {
+      "element_id": "desktop-github-agent",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "Every tool call requires individual human approval (A1), which bounds runaway automation; no autonomous loop or spend capability is declared for this agent."
+    },
+    {
+      "element_id": "desktop-github-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    },
+    {
+      "element_id": "el.public_issue_flow",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    },
+    {
+      "element_id": "el.public_issue_flow",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    },
+    {
+      "element_id": "el.public_issue_flow",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe any limit on the number or size of issues the agent processes, so resistance to flooding is not assessed."
+    },
+    {
+      "element_id": "el.github_issue_author",
+      "category": "spoofing",
+      "status": "not_applicable",
+      "rationale": "GitHub authenticates issue authors as real (if pseudonymous) accounts; the risk is that any such account may open issues, which is already captured as the untrusted trust_level on in.public_issue, not an identity-spoofing gap."
+    },
+    {
+      "element_id": "el.github_issue_author",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state whether GitHub's own issue-authorship log is consulted by the agent or its operators for attribution."
+    },
+    {
+      "element_id": "el.create_pr_flow",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    },
+    {
+      "element_id": "el.create_pr_flow",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    },
+    {
+      "element_id": "el.create_pr_flow",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "A single create_pull_request call per approved tool invocation does not expose a resource-exhaustion path on its own; broader spend or rate limits are not part of this capability."
+    },
+    {
+      "element_id": "el.github_mcp_server",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "f.unpinned_mcp_server_image"
+      ]
+    },
+    {
+      "element_id": "el.github_mcp_server",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f.unpinned_mcp_server_image"
+      ]
+    },
+    {
+      "element_id": "el.github_mcp_server",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state whether the MCP server logs tool invocations under an attributable identity separate from the agent process."
+    },
+    {
+      "element_id": "el.github_mcp_server",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    },
+    {
+      "element_id": "el.github_mcp_server",
+      "category": "denial_of_service",
+      "status": "not_assessed",
+      "rationale": "No information is given about rate limiting or resource caps within the MCP server container itself."
+    },
+    {
+      "element_id": "el.github_mcp_server",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "f.lethal_trifecta_private_repo_exfil"
+      ]
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "high",
+    "forecast": "critical",
+    "rationale": "The design wires an untrusted source (public GitHub issues, authorable by anyone) through a single broad-scope token to both a confidential read (private repo file contents) and a public, irreversible egress (create_pull_request on the public repo): a textbook lethal trifecta, inherent critical. The only declared control is a per-tool-call approval prompt, but it shows a collapsed model-generated summary and is approved many times per session, which the rubric and control_decay.md credit at only one tier, giving a residual of high rather than low. A second, independent weakness is that the MCP server image is referenced with no tag or digest pin and its identity is unverified, rated high as a property finding (missing supply-chain control) since no complete present path exploits it yet. Because the approval gate is a model-summary, high-volume gate, it is exactly the kind of control that model_upgrade, autonomy_increase, or control_removal defeat, so the forecast returns to critical. The single highest-leverage fix is scoping the credential per repository, which would sever the private-read path outright (step 1 credit) regardless of model capability or approval volume."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration shown in the artifacts, not observed runtime behavior; no transcripts of actual tool calls or approvals were available.",
+    "No system prompt or agent instructions were provided beyond the single user request; scope and safety instructions, if any, are unknown and could not be reviewed.",
+    "No logging, audit, or monitoring configuration was described, so repudiation and detective-control coverage for this agent and the MCP server could not be assessed beyond noting the gap.",
+    "The exact set of tools exposed by the github-mcp-server container beyond get_file_contents and create_pull_request is inferred from the artifact's stable-id table, not from a full tool manifest."
+  ]
+}

@@ -1,0 +1,339 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "13_runaway_enrichment_cost-run003",
+    "assessed_at": "2026-10-15T19:18:58Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.2",
+      "rubric_version": "0.3.2",
+      "model": "gemini-3.1-pro-preview"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "enrichment-agent",
+    "name": "Enrichment Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.enrich_lookup",
+      "action": "spend",
+      "target": "enrichment API",
+      "reversibility": "irreversible",
+      "data_sensitivity": "internal",
+      "is_egress": true,
+      "credential_scope": "shared_service_account"
+    },
+    {
+      "capability_id": "cap.spawn_researcher",
+      "action": "delegate",
+      "target": "sub agent",
+      "reversibility": "irreversible",
+      "data_sensitivity": "internal",
+      "is_egress": false,
+      "credential_scope": "shared_service_account"
+    },
+    {
+      "capability_id": "cap.crm_write",
+      "action": "write",
+      "target": "CRM",
+      "reversibility": "partially_reversible",
+      "data_sensitivity": "internal",
+      "is_egress": false,
+      "credential_scope": "least_privilege"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.crm_rows",
+      "source": "Nightly batch of CRM account rows",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": true,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "severity": "high",
+      "evidence_locator": "prompt.md:2-3",
+      "note": "Instructs the agent to keep going until every row is complete, implicitly commanding infinite retries on malformed data."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "el.agent",
+      "kind": "process",
+      "refs": [
+        "enrichment-agent"
+      ]
+    },
+    {
+      "element_id": "el.in_crm_rows",
+      "kind": "data_flow",
+      "crosses_boundary": false,
+      "refs": [
+        "in.crm_rows"
+      ]
+    },
+    {
+      "element_id": "el.cap_enrich",
+      "kind": "data_flow",
+      "crosses_boundary": true,
+      "refs": [
+        "cap.enrich_lookup"
+      ]
+    },
+    {
+      "element_id": "store.shared_quota",
+      "kind": "data_store",
+      "is_audit_record": false,
+      "refs": [
+        "store.shared_quota"
+      ]
+    },
+    {
+      "element_id": "el.enrichment_api",
+      "kind": "external_entity",
+      "refs": [
+        "cap.enrich_lookup"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctrl.spend_limit",
+      "name": "Hard max spend per run",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "status": "missing_recommended",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctrl.step_limit",
+      "name": "Max unattended steps and sub agent limit",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "status": "missing_recommended",
+      "covers": [
+        "cap.spawn_researcher"
+      ],
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctrl.spend_alert",
+      "name": "Spend anomaly alert",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "status": "missing_recommended",
+      "covers": [
+        "cap.enrich_lookup"
+      ],
+      "constrains_sink": false
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "find.spend_loop",
+      "title": "Missing limits and infinite retry loop cause Denial of Wallet and Cascading Failure",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "store.shared_quota"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0029",
+          "name": "Denial of AI Service",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "There is no maximum on steps, runtime, retries, or sub agents. enrich.lookup is billed per call and uses a quota shared with sales and marketing teams."
+        },
+        {
+          "locator": "prompt.md:2-3",
+          "observation": "Instruction to 'Keep going until every row is complete' combined with 3% malformed data creates an infinite spending loop."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Implement a hard max steps limit, restrict sub-agent spawning depth, and set a spend limit per run.",
+          "priority": "p1",
+          "audience": "developer"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "cascading_failure",
+        "autonomy_abuse"
+      ],
+      "likelihood": "almost_certain",
+      "consequence": "severe",
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "model_upgrade"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high"
+      },
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "el.agent",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not specify identity authentication details for this internal agent process."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not specify if agent configuration is protected from unauthorized tampering."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not specify whether the agent's actions are logged with attributable provenance."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not provide enough detail about internal network transit encryption."
+    },
+    {
+      "element_id": "el.agent",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "find.spend_loop"
+      ]
+    },
+    {
+      "element_id": "el.agent",
+      "category": "elevation_of_privilege",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not specify if the agent process could escalate privileges beyond intended scope."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "The shared quota is maintained by the external API provider and not directly writable by the agent."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "The quota system does not store internal readable sensitive data, only numerical usage counts."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "find.spend_loop"
+      ]
+    },
+    {
+      "element_id": "el.cap_enrich",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state if transit integrity is verified for the API calls crossing the boundary."
+    },
+    {
+      "element_id": "el.cap_enrich",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state if API calls are fully encrypted in transit over the external network."
+    },
+    {
+      "element_id": "el.cap_enrich",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "find.spend_loop"
+      ]
+    },
+    {
+      "element_id": "el.enrichment_api",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not specify if the API endpoint provides mutual authentication to prevent spoofing."
+    },
+    {
+      "element_id": "el.enrichment_api",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not specify if the external API provides non-repudiable transaction receipts."
+    }
+  ],
+  "rating": {
+    "inherent": "high",
+    "residual": "high",
+    "forecast": "high",
+    "rationale": "The property finding for missing spend and step limits drives a high inherent and residual risk because it exposes a shared organizational capability to complete exhaustion. Property findings are capped at high, preserving critical for attack paths originating from external untrusted actors."
+  },
+  "limitations": [
+    "The assessment reflects the declared design and configuration, not observed runtime behavior."
+  ]
+}

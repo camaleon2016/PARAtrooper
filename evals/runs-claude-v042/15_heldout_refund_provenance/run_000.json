@@ -1,0 +1,632 @@
+{
+  "schema_version": "0.6.0",
+  "assessment": {
+    "assessment_id": "15_heldout_refund_provenance-run000",
+    "assessed_at": "2026-10-16T02:43:11Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.2",
+      "rubric_version": "0.3.2",
+      "model": "claude-sonnet-5"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "initial"
+  },
+  "subject": {
+    "agent_id": "refunds-agent",
+    "name": "Refunds Agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.order_read",
+      "tool_ref": "orders.read",
+      "action": "read",
+      "target": "order history and payment details",
+      "data_sensitivity": "confidential",
+      "reversibility": "reversible",
+      "is_egress": false,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "capability_id": "cap.issue_refund",
+      "tool_ref": "payments.issue_refund",
+      "action": "spend",
+      "target": "customer refund via payments processor (any order, up to order total)",
+      "data_sensitivity": "confidential",
+      "reversibility": "irreversible",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L4_deployment_infrastructure"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.staff_request",
+      "source": "Support staff request via SSO-authenticated channel",
+      "trust_level": "trusted",
+      "reaches_capabilities": [
+        "cap.order_read",
+        "cap.issue_refund"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A3_act_then_report",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1",
+      "severity": "high",
+      "note": "The agent may issue a refund for any order and any amount up to the order total based on its own judgment, with no per-staff cap, aggregate cap, or category restriction defined anywhere in the prompt."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:2",
+      "severity": "high",
+      "note": "'Use your judgment on partial refunds. Do not ask for confirmation.' makes the model's own judgment the only check on an irreversible financial action; no structural approval gate backs this decision."
+    }
+  ],
+  "protocols": [
+    {
+      "protocol": "http_api",
+      "peer_ref": "el.ext_payments_processor",
+      "direction": "outbound",
+      "auth_method": "static_token",
+      "peer_identity_verified": false,
+      "definitions_pinned": false,
+      "peer_trust_level": "trusted",
+      "technique_refs": [
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1304",
+          "name": "Credential Relay Chain",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ]
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "refunds-agent",
+      "kind": "process",
+      "name": "Refunds Agent",
+      "refs": [
+        "refunds-agent"
+      ]
+    },
+    {
+      "element_id": "el.support_staff",
+      "kind": "external_entity",
+      "name": "Support staff (SSO-authenticated)",
+      "refs": [
+        "in.staff_request"
+      ]
+    },
+    {
+      "element_id": "el.staff_request_flow",
+      "kind": "data_flow",
+      "name": "Staff request to agent",
+      "refs": [
+        "in.staff_request"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "el.refund_egress",
+      "kind": "data_flow",
+      "name": "Refund instruction to payments processor",
+      "refs": [
+        "cap.issue_refund"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "store.processor_log",
+      "kind": "data_store",
+      "name": "Payments processor transaction log",
+      "refs": [
+        "cap.issue_refund"
+      ],
+      "is_audit_record": true
+    },
+    {
+      "element_id": "store.staff_chat_log",
+      "kind": "data_store",
+      "name": "Staff chat/request history (7-day retention)",
+      "refs": [
+        "in.staff_request"
+      ],
+      "is_audit_record": false
+    },
+    {
+      "element_id": "el.ext_payments_processor",
+      "kind": "external_entity",
+      "name": "Payments processor",
+      "refs": [
+        "cap.issue_refund"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.sso_auth",
+      "name": "SSO authentication for staff requests",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "in.staff_request"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance",
+      "governance_refs": [
+        {
+          "framework": "NIST_SP_800_53",
+          "id": "IA-2"
+        }
+      ]
+    },
+    {
+      "control_id": "ctl.order_cap_builtin",
+      "name": "Refund amount capped at original order total",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Enforced by the payments processor itself (a refund cannot exceed the order total), independent of model behavior. It narrows the maximum single-transaction loss but does not bound refund count, aggregate amount across orders, or require any human check, so it narrows rather than severs the path.",
+      "covers": [
+        "cap.issue_refund"
+      ],
+      "status": "declared",
+      "constrains_sink": true,
+      "severs_path": false,
+      "maestro_layer": "L4_deployment_infrastructure"
+    },
+    {
+      "control_id": "ctl.per_staff_identity_missing",
+      "name": "Per-staff identity propagated to refund action and log (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund",
+        "cap.order_read"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.refund_approval_gate_missing",
+      "name": "Human approval gate on refunds (missing)",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.spend_rate_limit_missing",
+      "name": "Aggregate refund spend/rate limit (missing)",
+      "category": "containment",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "cap.issue_refund"
+      ],
+      "status": "missing_recommended"
+    },
+    {
+      "control_id": "ctl.retention_missing",
+      "name": "Adequate retention of staff refund requests (missing)",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "covers": [
+        "in.staff_request"
+      ],
+      "status": "missing_recommended"
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "finding.shared-account-no-attribution",
+      "title": "Shared service account leaves refund actions unattributable and enables confused-deputy privilege (property finding)",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.issue_refund",
+        "cap.order_read"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0083",
+          "name": "Credentials from AI Agent Configuration",
+          "framework_edition": "2026.09"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "data_scope_expansion",
+          "control_removal"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "The shared service account is extended to additional support tools, or any plan to propagate staff identity through to the processor log is dropped or deprioritized."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes:1",
+          "observation": "The agent calls the payments processor with one shared service account used by every support tool, so the processor cannot distinguish which staff member initiated a given refund."
+        },
+        {
+          "locator": "runtime notes:2",
+          "observation": "The processor log records the service account, the amount, and the order, but not which staff member asked or why."
+        },
+        {
+          "locator": "runtime notes:3",
+          "observation": "The agent keeps no record of requests; staff chats are deleted after 7 days, removing the only other possible source of attribution."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Replace the shared service account with per-staff delegated credentials or a signed identity token so each refund call to the payments processor carries the requesting staff member's identity.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-2"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Retain the staff request record (requester identity, order, amount, rationale) for an audit-adequate period instead of deleting chat logs after 7 days.",
+          "priority": "p2",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "repudiation",
+        "elevation_of_privilege"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure",
+        "L6_security_compliance"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.8"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.8"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "finding.no-spend-limit-no-approval",
+      "title": "No approval gate or aggregate spend/rate limit on irreversible refunds beyond the per-order cap (property finding)",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.issue_refund"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAFE_MCP",
+          "id": "SAFE-T1403",
+          "name": "Consent-Fatigue Exploit",
+          "framework_edition": "SAFE-MCP-skill@e54523b"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "moderate",
+      "forecast": {
+        "triggers": [
+          "control_removal",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [
+          "ctl.order_cap_builtin"
+        ],
+        "projected_risk": "high",
+        "watch_signal": "The payments processor is configured to allow refunds exceeding the original order total (e.g., goodwill overrides), or the per-order cap is bypassed via repeated partial refund calls across orders."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-2",
+          "observation": "'Use your judgment on partial refunds. Do not ask for confirmation.' removes any human check before an irreversible refund is issued; this instruction is part of the risk, not a control."
+        },
+        {
+          "locator": "runtime notes:4",
+          "observation": "Refunds are irreversible once settled, usually within a day, so an erroneous or abusive refund cannot be undone after settlement."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require human approval with raw action review (full amount, order, and requester visible, not a collapsed summary) for refunds above a defined threshold.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Add a rolling per-staff and aggregate spend or count limit on refunds, independent of the per-order amount cap, to bound low-and-slow abuse.",
+          "priority": "p2",
+          "audience": "developer",
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L4_deployment_infrastructure"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.6.2.6"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "refunds-agent",
+      "category": "spoofing",
+      "status": "mitigated",
+      "control_ids": [
+        "ctl.sso_auth"
+      ]
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe protections against tampering with the agent's own configuration, prompt, or instructions."
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "finding.shared-account-no-attribution"
+      ]
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "Order data read is returned only to the requesting SSO-authenticated staff member who needs it to process the refund; no path to external disclosure is described."
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "finding.no-spend-limit-no-approval"
+      ]
+    },
+    {
+      "element_id": "refunds-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "finding.shared-account-no-attribution"
+      ]
+    },
+    {
+      "element_id": "el.support_staff",
+      "category": "spoofing",
+      "status": "mitigated",
+      "control_ids": [
+        "ctl.sso_auth"
+      ]
+    },
+    {
+      "element_id": "el.support_staff",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "finding.shared-account-no-attribution"
+      ]
+    },
+    {
+      "element_id": "el.staff_request_flow",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "Internal SSO-authenticated channel within the trust domain; this flow does not cross a trust boundary."
+    },
+    {
+      "element_id": "el.staff_request_flow",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "Internal SSO-authenticated channel within the trust domain; this flow does not cross a trust boundary."
+    },
+    {
+      "element_id": "el.staff_request_flow",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "Internal SSO-authenticated channel within the trust domain; this flow does not cross a trust boundary."
+    },
+    {
+      "element_id": "el.refund_egress",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe transport integrity protections (e.g., TLS, request signing) for calls to the payments processor."
+    },
+    {
+      "element_id": "el.refund_egress",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "Data is sent to the payments processor, the intended and authorized recipient for issuing the refund; this is not disclosure to an unauthorized party."
+    },
+    {
+      "element_id": "el.refund_egress",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "finding.no-spend-limit-no-approval"
+      ]
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state whether the processor log is tamper-evident or append-only on the processor side."
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe access controls on who may read the processor log."
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The processor log is an external payment system record whose availability is outside this agent's design scope."
+    },
+    {
+      "element_id": "store.processor_log",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "finding.shared-account-no-attribution"
+      ]
+    },
+    {
+      "element_id": "store.staff_chat_log",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe integrity protections on staff chat history during its 7-day retention window."
+    },
+    {
+      "element_id": "store.staff_chat_log",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not describe access controls on staff chat logs during their 7-day retention window."
+    },
+    {
+      "element_id": "store.staff_chat_log",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "This store is ephemeral chat history, not a component subject to denial-of-service concerns relevant to this assessment."
+    },
+    {
+      "element_id": "el.ext_payments_processor",
+      "category": "spoofing",
+      "status": "not_assessed",
+      "rationale": "Artifacts do not state whether processor endpoint identity is verified (e.g., certificate pinning) before sending refund instructions."
+    },
+    {
+      "element_id": "el.ext_payments_processor",
+      "category": "repudiation",
+      "status": "not_applicable",
+      "rationale": "The processor log is the record relied upon for repudiation of agent actions; the processor's own repudiation of receiving requests is outside this assessment's scope."
+    }
+  ],
+  "rating": {
+    "inherent": "high",
+    "residual": "high",
+    "forecast": "high",
+    "rationale": "No untrusted source reaches a sensitive sink today, so both findings are property findings (rubric 5a) rather than attack paths: a shared service account that strips staff attribution from every refund and payment read (repudiation and confused-deputy elevation of privilege), and the absence of any approval gate or aggregate spend/rate limit beyond the processor's built-in per-order cap, compounded by an explicit instruction not to seek confirmation. Both are capped at 'high' per the property-finding rule and driven to that tier by the autonomy modifier (no step or runtime limits are declared). The only credited control, the processor's per-order amount cap, is structural and independent but only narrows rather than severs the second finding's path, giving it a residual of 'moderate'; the attribution finding has no credited control at all and stays at 'high'. Forecast stays at 'high' overall because the attribution finding is already at the property-finding ceiling, though the spend-limit finding's own forecast rises from 'moderate' to 'high' if the per-order cap is weakened or bypassed (control_removal) or request volume grows (longer_task_horizon). The single control whose decay would matter most is ctl.order_cap_builtin, the per-order refund amount cap."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration described in the provided system prompt and runtime notes, not observed runtime behavior; actual agent behavior in production was not tested.",
+    "No MCP configuration, tool manifest, or IaC was provided; the payments processor integration, credential handling, and exact enforcement of the per-order cap are inferred from the runtime notes, so confidence on precise enforcement mechanisms is lower than it would be with verified configuration.",
+    "Whether SSO-authenticated staff identity is captured anywhere in the agent's own session state (even if not forwarded to the processor log or retained beyond 7 days) was not stated; if it is, the attribution gap may be partially mitigated outside the described chain and this assessment should be revised with that evidence."
+  ]
+}
