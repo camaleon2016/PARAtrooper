@@ -116,8 +116,9 @@ Roll up to `rating` (section 7). Add structural recommendations first. Set `trea
    - Element, attack path, and coverage references are ids from the document, never URLs, file paths, or package names.
 
    Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
-2. Run `python scripts/validate.py <file>` (use `python3` or `py` if that is how Python is invoked here). Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
-3. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
+2. Before validating, check every finding once more: **if its residual is above the floor you computed in step 9, `residual_rationale` must state the design fact that makes the floor too low.** This applies to secondary findings too, such as supply chain or missing property findings, and it is the most common validator error in testing. Also confirm no residual is below its floor.
+3. Run `python scripts/validate.py <file>` (use `python3` or `py` if that is how Python is invoked here). Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
+4. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
 
 If scripts cannot be run in the environment, load `references/validation_checklist.md` and apply every check in it yourself. Tell the user that validation was manual. If Python runs but `jsonschema` is not installed, the validator still runs every rubric check and warns that the schema check was skipped; install it with `pip install jsonschema` when you can.
 
@@ -727,7 +728,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 15. **Error:** every finding has a `forecast` block. If no trigger changes the tier, list the triggers you considered and set `projected_risk` equal to `residual_risk`.
 16. **Error:** `forecast.projected_risk` is not below `residual_risk`, every `failing_controls` entry is a defined control, and `triggers` is not empty. **Warning:** `watch_signal` is set, and an independent control is listed as failing only under a trigger that can defeat it.
 17. **Warning:** for present findings, `inherent_risk` matches the rubric's base matrix and autonomy modifier (rubric section 4).
-18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Error** (rubric 0.3.2 and later): if it is above that floor, `residual_rationale` explains why.
+18. **Error:** for present findings, `residual_risk` is not below the floor the control credits allow (rubric section 5). **Error** (rubric 0.3.2 and later): if it is above that floor, `residual_rationale` explains why. Check secondary findings too; this is the most common error.
 19. **Warning:** any finding with residual above `low` has at least one recommendation.
 20. **Warning:** a finding with structural preventive or containment recommendations has at least one `missing_recommended` control whose `covers` includes an id on its attack path.
 21. **Error:** a treatment with option `accept` names `treatment.approved_by`.

@@ -4,7 +4,7 @@ license: Apache-2.0
 compatibility: Runs on any agent platform that supports Agent Skills. Validation and reports need Python 3.10+ (jsonschema optional); without code execution, use references/validation_checklist.md.
 metadata:
   author: Jay White
-  version: "0.4.3"
+  version: "0.4.4"
   repository: https://github.com/camaleon2016/PARAtrooper
 description: Preemptive risk assessment for AI agents, MCP servers, and agent to agent designs. Use whenever the user shares a system prompt, tool list, MCP configuration, agent card, or agent architecture and wants risk rated, controls evaluated, security gaps found, or future risk predicted, even if they only ask "is this agent safe" or "review my agent."
 ---
@@ -107,8 +107,9 @@ Roll up to `rating` (section 7). Add structural recommendations first. Set `trea
    - Element, attack path, and coverage references are ids from the document, never URLs, file paths, or package names.
 
    Omit optional fields you have no value for instead of writing `null` (for example, leave out `residual_rationale` when residual equals the floor, rather than setting it to `null`). Never omit `forecast`: every finding needs one. When evidence quotes artifact text, escape double quotes and backslashes, and prefer a short paraphrase to a long quote.
-2. Run `python scripts/validate.py <file>` (use `python3` or `py` if that is how Python is invoked here). Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
-3. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
+2. Before validating, check every finding once more: **if its residual is above the floor you computed in step 9, `residual_rationale` must state the design fact that makes the floor too low.** This applies to secondary findings too, such as supply chain or missing property findings, and it is the most common validator error in testing. Also confirm no residual is below its floor.
+3. Run `python scripts/validate.py <file>` (use `python3` or `py` if that is how Python is invoked here). Fix every error. Warnings are acceptable only if you explain them in the rating rationale.
+4. Run `python scripts/render_report.py <file> --view both` and present the summary to the user.
 
 If scripts cannot be run in the environment, load `references/validation_checklist.md` and apply every check in it yourself. Tell the user that validation was manual. If Python runs but `jsonschema` is not installed, the validator still runs every rubric check and warns that the schema check was skipped; install it with `pip install jsonschema` when you can.
 
