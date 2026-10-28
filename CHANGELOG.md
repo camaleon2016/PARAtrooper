@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.4 (2026-10-28)
+
+Raises first attempt validity. Rubric (0.3.2) and schema (0.6.1) are unchanged; ratings are unaffected.
+
+### Changed
+- SKILL.md step 10 adds a final self check before validating: every finding rated above its floor must state the design fact in `residual_rationale`, secondary findings included, and no residual may sit below its floor. Since rubric 0.3.2 this has been the most common first attempt error on every model: the rating was a reasonable judgment, but its reason was left out. In the v0.4.2 batches it caused 10 of Claude's 12 single shot failures, and in a further GPT-5.4 batch 13 of 15 first attempts failed on it before one repair round fixed them.
+- The validation checklist points to the same check.
+
+### Fixed
+- The eval harness now stamps `schema_version` on each run with the version the skill writes, as it already did for the rubric version. The validator switches rules on by the declared schema version, so a run that declared an older version would have skipped newer checks.
+
 ## 0.4.3 (2026-10-18)
 
 Follows the SAFE-MCP project's rename to SAF-MCP. Schema 0.6.1. Rubric unchanged (0.3.2); rating behavior is unchanged, so the v0.4.2 results still describe the skill.

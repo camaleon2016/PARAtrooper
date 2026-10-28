@@ -1000,3 +1000,11 @@ def test_saf_mcp_framework_value_and_former_name():
     _, warnings = run(doc)
     assert not has(warnings, "former name")
     assert "SAFE-T1112" in check_cases.load_ids("saf_mcp_ids.tsv")
+
+
+def test_harness_stamps_the_schema_version_the_skill_writes():
+    import datetime as dt  # pylint: disable=import-outside-toplevel
+    import run_skill  # pylint: disable=import-outside-toplevel
+    doc = {"schema_version": "0.5.0", "assessment": {"assessor": {}}}
+    run_skill.stamp_metadata(doc, dt.datetime(2026, 11, 2, tzinfo=dt.timezone.utc), "m")
+    assert doc["schema_version"] == example()["schema_version"]

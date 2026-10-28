@@ -359,12 +359,20 @@ def stamp_metadata(doc: dict, started: dt.datetime, model: str) -> None:
     if not isinstance(assessment, dict):
         return
     assessment["assessed_at"] = started.isoformat(timespec="seconds").replace("+00:00", "Z")
+    # The validator turns rules on by the declared schema version, so the harness records the version
+    # the skill actually writes rather than trusting the model to state it.
+    doc["schema_version"] = current_schema_version()
     assessor = assessment.get("assessor")
     if isinstance(assessor, dict):
         assessor["kind"] = "skill"
         assessor["version"] = skill_version()
         assessor["model"] = model
         assessor["rubric_version"] = rubric_version()
+
+
+def current_schema_version() -> str:
+    """The schema version this skill writes, from the worked example."""
+    return json.loads((ROOT / "examples" / "support_agent.assessment.json").read_text(encoding="utf-8"))["schema_version"]
 
 
 def skill_version() -> str:
