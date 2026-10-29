@@ -2,6 +2,8 @@
 
 ## 0.4.4 (2026-10-28)
 
+Measured on GPT-5.4 with one repair round: first attempt validity 48% (51% in v0.4.2), so the self check did not help; ratings, recall, and false positives held. See `evals/runs-gpt-54-v044/`.
+
 Raises first attempt validity. Rubric (0.3.2) and schema (0.6.1) are unchanged; ratings are unaffected.
 
 ### Changed
