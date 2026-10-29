@@ -35,6 +35,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Findings
 
+- **Warning:** `restores_property` is set on a control that is behavioral or dependent; it earns no property credit (rubric section 5a).
+
 - **Warning:** a control that looks like a prompt instruction is marked `structural`; prompt instructions are always `behavioral` (control_decay.md, rule 4).
 
 13. **Error:** a present finding does not reference a planned element. **Warning:** a forecast finding that references a planned element names a trigger that adds it (`new_tool`, `new_mcp_server`, `new_peer_agent`, or `data_scope_expansion`).

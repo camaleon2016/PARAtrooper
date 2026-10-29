@@ -134,7 +134,22 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
       step 5: detective and corrective controls -> no tier credit
     """
     refs = set(finding_refs(finding))
+    inherent = finding["inherent_risk"]
+    if finding.get("finding_kind") == "property":
+        # Rubric 0.3.3, section 5a: only a control that restores the missing property earns credit, one tier,
+        # and only a structural, non dependent preventive or containment control can restore one. Approval
+        # gates, prompt instructions, allowlists, and ordinary logs do not.
+        restoring = [c for c in controls.values()
+                     if c["status"] != "missing_recommended" and refs & set(c.get("covers", []))
+                     and c.get("restores_property") and c["mechanism"] == "structural"
+                     and c["capability_dependence"] != "dependent" and c["category"] in {"preventive", "containment"}]
+        return shift(inherent, -1) if restoring else inherent
+    supply_chain = any(r.get("id") == "ASI04" for r in finding.get("threat_refs", []))
     gate_ids = {caps[r].get("approval_gate_ref") for r in refs if r in caps} - {None}
+    if supply_chain:
+        # Rubric 0.3.3, section 5c: against a compromised or substituted component, an approval prompt and a
+        # prompt instruction both operate inside the context that component controls. Neither earns credit.
+        gate_ids = set()
     on_path = [
         c for c in controls.values()
         if c["status"] != "missing_recommended" and (refs & set(c.get("covers", [])) or c["control_id"] in gate_ids)
@@ -161,11 +176,10 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
     # Rubric 5a: prompt instructions and other model dependent controls never restore a missing property
     # (provenance, a spend or step limit), so property findings get no step 4 credit. Until v0.4.2 the
     # validator granted it anyway, which made correct ratings of property findings look above the floor.
-    if finding.get("finding_kind") != "property" and any(
-            c["mechanism"] == "behavioral" or c["capability_dependence"] == "dependent" for c in others):
+    if not supply_chain and any(c["mechanism"] == "behavioral" or c["capability_dependence"] == "dependent"
+                                for c in others):
         credit += 1
 
-    inherent = finding["inherent_risk"]
     floor = floor if RANK[floor] <= RANK[inherent] else inherent
     return tier_max([shift(inherent, -credit), floor])
 
@@ -370,6 +384,10 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
             warnings.append(
                 f"controls/{ctl['control_id']}: behavioral control marked independent; see control_decay.md rule 3"
             )
+        if ctl.get("restores_property") and (ctl["mechanism"] != "structural"
+                                             or ctl["capability_dependence"] == "dependent"):
+            warnings.append(f"controls/{ctl['control_id']}: restores_property needs a structural, non dependent "
+                            "control; this one earns no property credit (rubric section 5a)")
         label = f"{ctl['control_id']} {ctl.get('name', '')}".lower()
         if ctl["mechanism"] == "structural" and any(w in label for w in ("prompt", "instruction", "system message")):
             warnings.append(

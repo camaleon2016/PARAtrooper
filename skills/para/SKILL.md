@@ -4,7 +4,7 @@ license: Apache-2.0
 compatibility: Runs on any agent platform that supports Agent Skills. Validation and reports need Python 3.10+ (jsonschema optional); without code execution, use references/validation_checklist.md.
 metadata:
   author: Jay White
-  version: "0.4.4"
+  version: "0.4.5"
   repository: https://github.com/camaleon2016/PARAtrooper
 description: Preemptive risk assessment for AI agents, MCP servers, and agent to agent designs. Use whenever the user shares a system prompt, tool list, MCP configuration, agent card, or agent architecture and wants risk rated, controls evaluated, security gaps found, or future risk predicted, even if they only ask "is this agent safe" or "review my agent."
 ---
@@ -74,7 +74,7 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 - Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
 - Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
-- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result. A prompt instruction is always `behavioral`, and it is a control only if it explicitly forbids or limits the action on the path; task descriptions are not controls, and an instruction that creates the risk is evidence of the weakness, never a control (control_decay.md, rules 4 and 5).
+- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result. Set `restores_property: true` only on a structural control that restores what a property finding says is missing (attributable records, hard limits, pinned and verified definitions); approval prompts, prompt instructions, allowlists, and ordinary logs never do (rubric section 5a). Against supply chain findings (ASI04), approval prompts and prompt instructions earn no credit (rubric section 5c). A prompt instruction is always `behavioral`, and it is a control only if it explicitly forbids or limits the action on the path; task descriptions are not controls, and an instruction that creates the risk is evidence of the weakness, never a control (control_decay.md, rules 4 and 5).
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
 ### 8. Find attack paths

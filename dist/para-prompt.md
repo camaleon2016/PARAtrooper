@@ -83,7 +83,7 @@ Load `references/control_decay.md`. For each control, set `mechanism`, `capabili
 - Set `severs_path: true` only after answering yes to all three questions, and cite the evidence in the finding: Is the control enforced outside the model? Does it work regardless of model capability? Does it make the sink **unreachable** from the source, not merely harder to reach? A control that only narrows the path does not sever it.
 - Set `constrains_sink: true` on a structural control only when it limits the sink itself: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that still allows unrestricted network egress does not constrain the sink.
 - **Record every control you recommend.** For each structural recommendation (a control that would sever or narrow a path), add a control with `status: missing_recommended` that covers the capability or input on the path. Naming the fix only in a recommendation leaves reviewers without a gap list and gives forecasts nothing to name. The validator warns when a finding has structural recommendations but no missing control on its path.
-- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result. A prompt instruction is always `behavioral`, and it is a control only if it explicitly forbids or limits the action on the path; task descriptions are not controls, and an instruction that creates the risk is evidence of the weakness, never a control (control_decay.md, rules 4 and 5).
+- Record every control the artifacts mention, including weak ones such as prompt rules and sandboxes. Residual is computed from the full set, so omitting a weak control changes the result. Set `restores_property: true` only on a structural control that restores what a property finding says is missing (attributable records, hard limits, pinned and verified definitions); approval prompts, prompt instructions, allowlists, and ordinary logs never do (rubric section 5a). Against supply chain findings (ASI04), approval prompts and prompt instructions earn no credit (rubric section 5c). A prompt instruction is always `behavioral`, and it is a control only if it explicitly forbids or limits the action on the path; task descriptions are not controls, and an instruction that creates the risk is evidence of the weakness, never a control (control_decay.md, rules 4 and 5).
 - Wire every human approval gate through `approval_gate_ref` on each capability it gates. An approval that is granted once and then remembered is not a gate; see `control_decay.md`.
 
 ### 8. Find attack paths
@@ -378,7 +378,7 @@ Load this file when the design includes MCP servers, A2A peers, or other agent c
 
 # PARA Rubric
 
-Rubric version: 0.3.2. Applies to schema 0.6.x.
+Rubric version: 0.3.3. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -492,11 +492,15 @@ Some risks have no attack path: a missing property such as attributable provenan
 2. **Base tier.** Use the **I row** of the base matrix: S3 `high`, S2 `moderate`, S1 and S0 `low`. A missing property is exposed to internal error and misuse as readily as to an attacker.
 3. **Autonomy modifier.** Apply section 4's modifier.
 4. **Cap.** A property finding alone never exceeds `high`. `critical` is reserved for complete attack paths. When a missing property makes a path finding worse (for example, no provenance on the exfiltration path), record it on the path finding instead.
-5. **Residual.** Controls that restore the missing property earn credit at the step their mechanism qualifies for. Tamper evident action provenance is structural preventive for repudiation; a hard spend cap or step limit is structural preventive for denial of service. Prompt instructions never restore either.
+5. **Residual.** Only a control that restores the missing property earns credit: one tier, and only if it is structural and not dependent, and recorded with `restores_property: true`. Tamper evident, attributable action records restore provenance; hard spend, rate, or step limits restore limits; pinned and verified definitions restore component integrity. Approval prompts, prompt instructions, allowlists, and ordinary logs restore none of these, so they earn nothing on a property finding. In the v0.4.x batches, runs on every model rated property findings above a floor that had credited such controls.
 
 ### Designs with no complete path today
 
 When no untrusted source reaches a sensitive sink today, there is no present path finding above `low`. Risks that depend on planned changes are `horizon: forecast` findings. Do not promote them to present findings to make them visible; the forecast rating carries them.
+
+## 5c. Supply chain findings
+
+A finding tagged ASI04 (a compromised, substituted, or unverified tool, server, or peer agent) is about a component that controls what the agent sees. An approval prompt and a prompt instruction both work inside that context, so neither earns credit against it, whatever the review mode. Credit comes only from structural controls on the component itself, such as pinning, signature or identity verification, or an allowlist of exact definitions, at the step they qualify for. Runs on every model consistently rated these findings above floors that had credited approval prompts and prompt instructions.
 
 ## 6. Forecast risk
 
@@ -721,6 +725,8 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
 
 ## Findings
 
+- **Warning:** `restores_property` is set on a control that is behavioral or dependent; it earns no property credit (rubric section 5a).
+
 - **Warning:** a control that looks like a prompt instruction is marked `structural`; prompt instructions are always `behavioral` (control_decay.md, rule 4).
 
 13. **Error:** a present finding does not reference a planned element. **Warning:** a forecast finding that references a planned element names a trigger that adds it (`new_tool`, `new_mcp_server`, `new_peer_agent`, or `data_scope_expansion`).
@@ -766,7 +772,7 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
     "schema_version": {
       "type": "string",
       "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "Semantic version of this schema. Bump minor for additive fields, major for breaking changes. 0.2.0 added governance alignment. 0.3.0 added controls.approval_review_mode and controls.severs_path. 0.4.0 added elements and planned capabilities and inputs. 0.5.0 added findings.residual_rationale. 0.6.0 added stride_coverage, findings.finding_kind and affected_refs, controls.approval_volume and constrains_sink. 0.6.1 added the SAF_MCP framework value."
+      "description": "Semantic version of this schema. Bump minor for additive fields, major for breaking changes. 0.2.0 added governance alignment. 0.3.0 added controls.approval_review_mode and controls.severs_path. 0.4.0 added elements and planned capabilities and inputs. 0.5.0 added findings.residual_rationale. 0.6.0 added stride_coverage, findings.finding_kind and affected_refs, controls.approval_volume and constrains_sink. 0.6.1 added the SAF_MCP framework value. 0.6.2 added controls.restores_property."
     },
     "assessment": {
       "type": "object",
@@ -1328,6 +1334,10 @@ The checks are kept in step with `scripts/validate.py`; when they differ, the sc
           "constrains_sink": {
             "type": "boolean",
             "description": "True when this structural control actually limits the sink of the path it covers: the egress destination, the credential scope, the amount, or the irreversible action. A sandbox that leaves the sink reachable does not. Rubric section 5 step 3 credits only controls with constrains_sink true."
+          },
+          "restores_property": {
+            "type": "boolean",
+            "description": "True when this control restores a missing property that a property finding names: tamper evident, attributable action records restore provenance; hard spend, rate, or step limits restore limits; pinned and verified definitions restore component integrity. Approval prompts, prompt instructions, allowlists, and ordinary logs do not. Rubric section 5a credits only these controls on property findings."
           }
         }
       }
