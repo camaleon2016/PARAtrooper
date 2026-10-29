@@ -1,6 +1,6 @@
 # PARA Rubric
 
-Rubric version: 0.3.2. Applies to schema 0.6.x.
+Rubric version: 0.3.3. Applies to schema 0.6.x.
 
 This rubric turns design facts into tiers. The same facts must always produce the same tier. When you have to use judgment, write it down in the finding's evidence or rationale. Do not let it affect the tier without saying so.
 
@@ -114,11 +114,15 @@ Some risks have no attack path: a missing property such as attributable provenan
 2. **Base tier.** Use the **I row** of the base matrix: S3 `high`, S2 `moderate`, S1 and S0 `low`. A missing property is exposed to internal error and misuse as readily as to an attacker.
 3. **Autonomy modifier.** Apply section 4's modifier.
 4. **Cap.** A property finding alone never exceeds `high`. `critical` is reserved for complete attack paths. When a missing property makes a path finding worse (for example, no provenance on the exfiltration path), record it on the path finding instead.
-5. **Residual.** Controls that restore the missing property earn credit at the step their mechanism qualifies for. Tamper evident action provenance is structural preventive for repudiation; a hard spend cap or step limit is structural preventive for denial of service. Prompt instructions never restore either.
+5. **Residual.** Only a control that restores the missing property earns credit: one tier, and only if it is structural and not dependent, and recorded with `restores_property: true`. Tamper evident, attributable action records restore provenance; hard spend, rate, or step limits restore limits; pinned and verified definitions restore component integrity. Approval prompts, prompt instructions, allowlists, and ordinary logs restore none of these, so they earn nothing on a property finding. In the v0.4.x batches, runs on every model rated property findings above a floor that had credited such controls.
 
 ### Designs with no complete path today
 
 When no untrusted source reaches a sensitive sink today, there is no present path finding above `low`. Risks that depend on planned changes are `horizon: forecast` findings. Do not promote them to present findings to make them visible; the forecast rating carries them.
+
+## 5c. Supply chain findings
+
+A finding tagged ASI04 (a compromised, substituted, or unverified tool, server, or peer agent) is about a component that controls what the agent sees. An approval prompt and a prompt instruction both work inside that context, so neither earns credit against it, whatever the review mode. Credit comes only from structural controls on the component itself, such as pinning, signature or identity verification, or an allowlist of exact definitions, at the step they qualify for. Runs on every model consistently rated these findings above floors that had credited approval prompts and prompt instructions.
 
 ## 6. Forecast risk
 

@@ -1008,3 +1008,37 @@ def test_harness_stamps_the_schema_version_the_skill_writes():
     doc = {"schema_version": "0.5.0", "assessment": {"assessor": {}}}
     run_skill.stamp_metadata(doc, dt.datetime(2026, 11, 2, tzinfo=dt.timezone.utc), "m")
     assert doc["schema_version"] == example()["schema_version"]
+
+
+def _floor_of(doc, finding):
+    caps = {c["capability_id"]: c for c in doc["capabilities"]}
+    controls = {c["control_id"]: c for c in doc["controls"]}
+    return validate.residual_floor(finding, caps, controls)
+
+
+def test_property_findings_credit_only_controls_that_restore_the_property():
+    gated = gated_example("raw_action")  # adds an approval gate on cap.email_send
+    prop = property_example()
+    f = prop["findings"][-1]
+    prop["controls"].append(gated["controls"][-1])
+    prop["capabilities"][1]["approval_gate_ref"] = gated["capabilities"][1]["approval_gate_ref"]
+    assert _floor_of(prop, f) == "high"  # the gate, the prompt rule, and the send log earn nothing
+    prop["controls"].append({"control_id": "ctl.signed_send_ledger", "name": "Tamper evident, attributable send ledger",
+                             "category": "preventive", "mechanism": "structural", "capability_dependence": "independent",
+                             "covers": ["cap.email_send"], "status": "declared", "restores_property": True})
+    assert _floor_of(prop, f) == "moderate"
+    prop["controls"][-1]["mechanism"] = "behavioral"
+    _, warnings = run(prop)
+    assert has(warnings, "restores_property needs a structural")
+    assert _floor_of(prop, f) == "high"
+
+
+def test_supply_chain_findings_get_no_credit_from_gates_or_prompt_rules():
+    doc = gated_example("raw_action")
+    doc["controls"][-1]["approval_volume"] = "low"
+    f = doc["findings"][0]
+    before = _floor_of(doc, f)
+    f["threat_refs"].append({"framework": "OWASP_AGENTIC", "id": "ASI04", "framework_edition": "2026"})
+    assert before == "low" and _floor_of(doc, f) == "critical"
+    doc["controls"].append(recipient_binding(constrains_sink=True))
+    assert _floor_of(doc, f) == "high"  # a structural control on the path still counts

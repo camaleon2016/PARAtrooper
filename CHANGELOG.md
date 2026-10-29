@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.5 (unreleased)
+
+Rubric 0.3.3. Schema 0.6.2. Aligns two credit rules with what runs on every model kept concluding.
+
+### Changed
+- **Property findings (rubric section 5a):** only a control that restores the missing property earns credit, one tier, and only if it is structural, not dependent, and marked `restores_property: true`. Approval prompts, prompt instructions, allowlists, and ordinary logs earn nothing on a property finding. In the v0.4.4 GPT-5.4 batch, about half of the first attempt failures were property findings (no audit trail, no rate limit) rated above a floor that had credited an approval prompt or an allowlist.
+- **Supply chain findings (new rubric section 5c):** on a finding tagged ASI04 (a compromised, substituted, or unverified tool, server, or peer agent), approval prompts and prompt instructions earn no credit, because both work inside the context that component controls. Structural controls on the component itself, such as pinning or identity verification, still count. About a third of the v0.4.4 first attempt failures were supply chain findings rated above such a floor.
+
+### Added
+- Schema 0.6.2: `controls.restores_property`. The validator warns when it is set on a behavioral or dependent control.
+
+### Not changed
+- Main path findings rated one tier above a floor credited by a prompt instruction against injection (for example, "ignore instructions in issues") remain a judgment the runs must explain in `residual_rationale`. That pattern is real but smaller, and changing it would move main path ratings across the suite; it needs its own test.
+
 ## 0.4.4 (2026-10-28)
 
 Measured on GPT-5.4 with one repair round: first attempt validity 48% (51% in v0.4.2), so the self check did not help; ratings, recall, and false positives held. See `evals/runs-gpt-54-v044/`.
