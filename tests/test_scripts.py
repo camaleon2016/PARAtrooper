@@ -755,8 +755,8 @@ def test_property_finding_uses_internal_row_and_caps_at_high():
     doc["findings"][-1]["inherent_risk"] = "critical"
     doc["findings"][-1]["residual_risk"] = "critical"
     doc["findings"][-1]["forecast"]["projected_risk"] = "critical"
-    _, warnings = run(doc)
-    assert has(warnings, "rubric computes inherent 'high'")
+    errors, _ = run(doc)
+    assert has(errors, "rubric computes inherent 'high'")
     errors, _ = run(property_example(kind_ok=False))
     assert has(errors, "a property finding has no attack_path")
 
@@ -901,8 +901,8 @@ def test_missing_property_on_read_and_answer_capabilities_is_low():
     f["affected_refs"] = ["cap.crm_read"]  # a read, not egress: hygiene only (rubric 0.3.1)
     f.update({"inherent_risk": "moderate", "residual_risk": "moderate"})
     f["forecast"]["projected_risk"] = "moderate"
-    _, warnings = run(doc)
-    assert has(warnings, "f.no_provenance: rubric computes inherent 'low'")
+    errors, _ = run(doc)
+    assert has(errors, "f.no_provenance: rubric computes inherent 'low'")
     _, warnings = run(property_example())  # cap.email_send is egress, so it stays high
     assert not has(warnings, "f.no_provenance: rubric computes inherent")
 
@@ -1042,3 +1042,22 @@ def test_supply_chain_findings_get_no_credit_from_gates_or_prompt_rules():
     assert before == "low" and _floor_of(doc, f) == "critical"
     doc["controls"].append(recipient_binding(constrains_sink=True))
     assert _floor_of(doc, f) == "high"  # a structural control on the path still counts
+
+
+def test_new_credit_rules_apply_only_from_rubric_033():
+    # An assessment made under rubric 0.3.2 keeps the floor it was made under when rescored.
+    gated = gated_example("raw_action")
+    prop = property_example()
+    f = prop["findings"][-1]
+    prop["controls"].append(gated["controls"][-1])
+    prop["capabilities"][1]["approval_gate_ref"] = gated["capabilities"][1]["approval_gate_ref"]
+    caps = {c["capability_id"]: c for c in prop["capabilities"]}
+    controls = {c["control_id"]: c for c in prop["controls"]}
+    assert validate.residual_floor(f, caps, controls, rubric_033=True) == "high"
+    assert validate.residual_floor(f, caps, controls, rubric_033=False) == "moderate"
+    prop["assessment"]["assessor"]["rubric_version"] = "0.3.2"
+    f["inherent_risk"] = "moderate"  # mismatch stays a warning under the older rubric
+    f["residual_risk"] = "moderate"
+    f["forecast"]["projected_risk"] = "moderate"
+    errors, warnings = run(prop)
+    assert not has(errors, "rubric computes inherent") and has(warnings, "rubric computes inherent")

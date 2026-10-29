@@ -83,7 +83,7 @@ Load `references/toxic_combinations.md` and follow its search procedure. `toxic_
 
 If no untrusted source reaches a sensitive sink today, do not create a present path finding above `low`; risks that depend on planned changes are forecast findings (rubric section 5a).
 
-When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it. A missing property on an agent that only reads and answers the requester is `low`; it rises only when an affected capability is consequential (writes, deletes, executes, configures, spends, delegates, accesses credentials, or sends data outside the boundary).
+When every source that could trigger a harm is trusted or internal, and the harm comes from a missing limit or a missing record (no spend, rate, or step limit; no attributable provenance), record it as a **property finding** (`finding_kind: property`), not a path finding from the internal source. Section 5a tiers it. A missing property on an agent that only reads and answers the requester is `low` (a reply to the authenticated requester is not egress, so `is_egress` is false), and from rubric 0.3.3 the validator rejects any other inherent tier for it; it rises only when an affected capability is consequential (writes, deletes, executes, configures, spends, delegates, accesses credentials, or sends data outside the boundary).
 
 ### 8b. STRIDE per element coverage
 

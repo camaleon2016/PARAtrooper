@@ -121,7 +121,7 @@ def expected_inherent(finding: dict, inputs: dict, caps: dict, autonomy: dict) -
     return autonomy_shift(BASE_MATRIX[src][sink], sink, autonomy)
 
 
-def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
+def residual_floor(finding: dict, caps: dict, controls: dict, rubric_033: bool = True) -> str:
     """Lowest residual that rubric section 5 credits can justify for the controls on the path.
 
     Each control earns credit at exactly one step:
@@ -135,7 +135,7 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
     """
     refs = set(finding_refs(finding))
     inherent = finding["inherent_risk"]
-    if finding.get("finding_kind") == "property":
+    if rubric_033 and finding.get("finding_kind") == "property":
         # Rubric 0.3.3, section 5a: only a control that restores the missing property earns credit, one tier,
         # and only a structural, non dependent preventive or containment control can restore one. Approval
         # gates, prompt instructions, allowlists, and ordinary logs do not.
@@ -144,7 +144,9 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
                      and c.get("restores_property") and c["mechanism"] == "structural"
                      and c["capability_dependence"] != "dependent" and c["category"] in {"preventive", "containment"}]
         return shift(inherent, -1) if restoring else inherent
-    supply_chain = any(r.get("id") == "ASI04" for r in finding.get("threat_refs", []))
+    # rubric_033 False reproduces the floor for assessments made under rubric 0.3.2 and earlier, so
+    # rescoring an older assessment judges it by the rules it was made under.
+    supply_chain = rubric_033 and any(r.get("id") == "ASI04" for r in finding.get("threat_refs", []))
     gate_ids = {caps[r].get("approval_gate_ref") for r in refs if r in caps} - {None}
     if supply_chain:
         # Rubric 0.3.3, section 5c: against a compromised or substituted component, an approval prompt and a
@@ -176,8 +178,8 @@ def residual_floor(finding: dict, caps: dict, controls: dict) -> str:
     # Rubric 5a: prompt instructions and other model dependent controls never restore a missing property
     # (provenance, a spend or step limit), so property findings get no step 4 credit. Until v0.4.2 the
     # validator granted it anyway, which made correct ratings of property findings look above the floor.
-    if not supply_chain and any(c["mechanism"] == "behavioral" or c["capability_dependence"] == "dependent"
-                                for c in others):
+    if not supply_chain and (rubric_033 or finding.get("finding_kind") != "property") and any(
+            c["mechanism"] == "behavioral" or c["capability_dependence"] == "dependent" for c in others):
         credit += 1
 
     floor = floor if RANK[floor] <= RANK[inherent] else inherent
@@ -469,8 +471,14 @@ def _semantic_checks(doc: dict, errors: list[str], warnings: list[str]) -> None:
         if f["horizon"] == "present":
             exp = expected_inherent(f, inputs, caps, doc["autonomy"])
             if exp and exp != f["inherent_risk"]:
-                warnings.append(f"{fid}: rubric computes inherent '{exp}', document says '{f['inherent_risk']}'")
-            floor = residual_floor(f, caps, controls)
+                msg = f"{fid}: rubric computes inherent '{exp}', document says '{f['inherent_risk']}'"
+                # A property finding's inherent tier follows mechanically from the document's own capability
+                # declarations (rubric section 5a), so from rubric 0.3.3 a mismatch is an error.
+                if f.get("finding_kind") == "property" and rubric_at_least(doc, (0, 3, 3)):
+                    errors.append(msg + " (rubric section 5a: a missing property on read and answer capabilities is low)")
+                else:
+                    warnings.append(msg)
+            floor = residual_floor(f, caps, controls, rubric_at_least(doc, (0, 3, 3)))
             if RANK[f["residual_risk"]] < RANK[floor]:
                 # An error from schema 0.6.0 (rubric 0.3.0); earlier documents keep the warning they targeted.
                 below = (f"{fid}: residual '{f['residual_risk']}' is below what path controls can justify "
