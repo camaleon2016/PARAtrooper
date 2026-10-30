@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.5 (unreleased)
+## 0.4.5 (2026-10-30)
 
 Measured on GPT-5.4 with one repair round: first attempt validity 56% (48% in v0.4.4), no false positives, every residual in range; validity after repair 91% (95%). An earlier round and its fixes are in `evals/archive/0.4.5-pre/`.
 
