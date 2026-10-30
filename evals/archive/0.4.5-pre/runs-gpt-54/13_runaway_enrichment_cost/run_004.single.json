@@ -1,0 +1,539 @@
+{
+  "schema_version": "0.6.2",
+  "assessment": {
+    "assessment_id": "13_runaway_enrichment_cost-run004",
+    "assessed_at": "2026-10-29T01:22:19Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.5",
+      "rubric_version": "0.3.3",
+      "model": "gpt-5.4"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      }
+    ],
+    "assessment_reason": "on_request"
+  },
+  "subject": {
+    "agent_id": "enrichment-agent",
+    "name": "enrichment-agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.enrich_lookup",
+      "tool_ref": "enrich.lookup",
+      "action": "spend",
+      "target": "paid enrichment API",
+      "data_sensitivity": "internal",
+      "reversibility": "irreversible",
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.spawn_researcher",
+      "action": "delegate",
+      "target": "researcher sub agent",
+      "data_sensitivity": "internal",
+      "reversibility": "partially_reversible",
+      "maestro_layer": "L3_agent_frameworks"
+    },
+    {
+      "capability_id": "cap.crm_write",
+      "action": "write",
+      "target": "CRM enriched fields",
+      "data_sensitivity": "internal",
+      "reversibility": "reversible",
+      "credential_scope": "least_privilege",
+      "maestro_layer": "L7_agent_ecosystem"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.crm_rows",
+      "source": "Nightly batch of CRM account rows",
+      "trust_level": "internal",
+      "reaches_capabilities": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher",
+        "cap.crm_write"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A4_fully_autonomous",
+    "max_unattended_steps": null,
+    "max_runtime_minutes": null,
+    "can_spawn_agents": true,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "unbounded_scope",
+      "evidence_locator": "prompt.md:1-3",
+      "severity": "high",
+      "note": "The prompt requires completion of every row and instructs retries and delegation without any stopping condition."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:1-3",
+      "severity": "moderate",
+      "note": "The design relies on task instructions without any structural limits on retries, runtime, spending, or delegation."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "enrichment-agent",
+      "kind": "process",
+      "name": "enrichment-agent",
+      "refs": [
+        "enrichment-agent"
+      ]
+    },
+    {
+      "element_id": "flow.in.crm_rows",
+      "kind": "data_flow",
+      "name": "Nightly batch of CRM account rows",
+      "refs": [
+        "in.crm_rows"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "ext.crm_source",
+      "kind": "external_entity",
+      "name": "CRM batch producer",
+      "refs": [
+        "in.crm_rows"
+      ]
+    },
+    {
+      "element_id": "flow.cap.enrich_lookup",
+      "kind": "data_flow",
+      "name": "Outbound calls to enrich.lookup",
+      "refs": [
+        "cap.enrich_lookup"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "flow.cap.crm_write",
+      "kind": "data_flow",
+      "name": "CRM write flow",
+      "refs": [
+        "cap.crm_write"
+      ],
+      "crosses_boundary": false
+    },
+    {
+      "element_id": "store.shared_quota",
+      "kind": "data_store",
+      "name": "Shared enrichment API key and monthly quota",
+      "refs": [
+        "cap.enrich_lookup"
+      ]
+    }
+  ],
+  "controls": [],
+  "findings": [
+    {
+      "finding_id": "F01",
+      "title": "Spend loop (TC6): unbounded retries and recursive delegation can exhaust the shared enrichment quota",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.crm_rows",
+          "note": "Internal batch rows drive processing of each account."
+        },
+        {
+          "ref": "cap.enrich_lookup",
+          "note": "Each lookup incurs irreversible billed spend against a shared monthly quota."
+        },
+        {
+          "ref": "cap.spawn_researcher",
+          "note": "On incomplete results the agent can delegate to researcher sub agents, which may recursively spawn more researchers."
+        },
+        {
+          "ref": "store.shared_quota",
+          "note": "The shared quota is consumed until depleted, disrupting other teams."
+        }
+      ],
+      "toxic_combination": [
+        "in.crm_rows",
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0034.002",
+          "name": "Cost Harvesting: Agentic Resource Consumption",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAF_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAF-MCP-skill@62e85d5"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-3",
+          "observation": "The prompt says to retry failed or incomplete lookups and keep going until every row is complete."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "There is no maximum on steps, runtime, retries, or sub agents, and sub agents can spawn their own researchers."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The nightly batch is 40,000 rows and about 3 percent have malformed company names that never return a complete result, creating a persistent retry set."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "enrich.lookup is billed per call, and the API key and quota are shared with sales and marketing, so quota exhaustion harms other teams."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Add hard step, retry, runtime, and recursion limits enforced outside the model for account enrichment and all spawned researchers.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MANAGE 2.4",
+              "framework_edition": "1.0"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "containment",
+          "mechanism": "structural",
+          "action": "Add a hard spend cap and quota partition for this agent so enrichment cannot consume the shared monthly budget used by other teams.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-5"
+            },
+            {
+              "framework": "ISO_42001",
+              "id": "6.1.2",
+              "framework_edition": "2023"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Add spend alerts and anomaly detection on lookup volume, retry counts, and spawned sub-agent counts.",
+          "priority": "p2",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MEASURE 3.1",
+              "framework_edition": "1.0"
+            }
+          ],
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "cascading_failure",
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 3.1",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "8.2",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      },
+      "forecast": {
+        "triggers": [
+          "longer_task_horizon",
+          "autonomy_increase",
+          "model_upgrade"
+        ],
+        "failing_controls": [],
+        "projected_risk": "critical",
+        "watch_signal": "Median steps per task, retry counts, runtime per batch, or spawned sub-agent counts rise above the current nightly baseline."
+      }
+    },
+    {
+      "finding_id": "F02",
+      "title": "Missing hard spend and step limits on consequential capabilities leave the agent vulnerable to runaway cost and service disruption",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.enrich_lookup",
+        "cap.spawn_researcher"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI08",
+          "name": "Cascading Failures",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0029",
+          "name": "Denial of AI Service",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAF_MCP",
+          "id": "SAFE-T1106",
+          "name": "Autonomous Loop Exploit",
+          "framework_edition": "SAF-MCP-skill@62e85d5"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "runtime notes",
+          "observation": "There is no maximum on steps, runtime, retries, or sub agents."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "There is no spend alert on the enrichment account."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The enrichment API key and monthly quota are shared with other teams, so depletion affects business operations beyond this agent."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Implement hard per-run and monthly spend caps, maximum unattended steps, maximum retries per row, and maximum delegation depth enforced by orchestration.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "SC-5"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "corrective",
+          "mechanism": "structural",
+          "action": "Partition or rotate quotas so exhaustion by this agent cannot deny service to sales and marketing tools.",
+          "priority": "p2",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MANAGE 1.3",
+              "framework_edition": "1.0"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "denial_of_service"
+      ],
+      "agentic_class": [
+        "cascading_failure"
+      ],
+      "maestro_layers": [
+        "L3_agent_frameworks",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      },
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "longer_task_horizon",
+          "control_removal"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "Any increase in allowed runtime, retry policy, delegation depth, or batch size without matching hard caps requires reassessment."
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "enrichment-agent",
+      "category": "spoofing",
+      "status": "not_applicable",
+      "rationale": "The provided artifacts describe no inbound authentication surface or peer identity assertion for this first-party batch agent."
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "The artifacts do not show self-configuration or mutable tool definitions; the assessed risk is runaway execution, not config tampering."
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "repudiation",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not describe logs, audit records, or action attribution for batch runs or spawned researchers."
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "The described capabilities do not include external data egress or confidential data disclosure paths in the supplied design."
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "F01",
+        "F02"
+      ]
+    },
+    {
+      "element_id": "enrichment-agent",
+      "category": "elevation_of_privilege",
+      "status": "not_applicable",
+      "rationale": "No broader-than-intended identity abuse path is evidenced; the main issue is unbounded cost and quota exhaustion."
+    },
+    {
+      "element_id": "flow.in.crm_rows",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not say whether upstream CRM batch validation detects malformed or duplicate account rows before processing."
+    },
+    {
+      "element_id": "flow.in.crm_rows",
+      "category": "information_disclosure",
+      "status": "not_applicable",
+      "rationale": "This internal input flow is not marked as crossing a trust boundary, so boundary disclosure analysis does not apply here."
+    },
+    {
+      "element_id": "flow.in.crm_rows",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "This internal flow itself does not cross a trust boundary; denial risk is recorded on the agent and quota store instead."
+    },
+    {
+      "element_id": "flow.cap.enrich_lookup",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not state whether outbound API calls have integrity checks, request signing, or protected retry semantics."
+    },
+    {
+      "element_id": "flow.cap.enrich_lookup",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The flow crosses a boundary, but the artifacts do not describe transport encryption or whether payloads include sensitive CRM fields."
+    },
+    {
+      "element_id": "flow.cap.enrich_lookup",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "F01"
+      ]
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not describe whether quota counters or API-key usage records are protected against unauthorized modification."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not say who can read the shared enrichment API key or quota telemetry tied to this store."
+    },
+    {
+      "element_id": "store.shared_quota",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "F01",
+        "F02"
+      ]
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "Present risk is dominated by a critical spend-loop path: internal CRM rows drive a fully autonomous agent with no limits on retries, runtime, steps, or recursive delegation, and each enrichment call irreversibly consumes a shared monthly quota. No declared or verified controls are present, so residual remains critical. Forecast remains critical because the design already lacks the controls whose decay would matter; the most important missing control is a hard structural spend and execution limit enforced outside the model. Validation was performed manually against the provided schema and checklist because script execution was unavailable."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in the provided prompt and runtime notes, not observed runtime behavior.",
+    "No tool manifest, source code, or orchestration configuration was provided, so capability wiring, exact retry logic, and any hidden controls could not be verified.",
+    "No logging or audit design was provided, so repudiation and some detective-control coverage could only be marked not_assessed.",
+    "No protocol or identity configuration for enrich.lookup was provided, so transport protections and credential handling details were not assessed."
+  ]
+}
