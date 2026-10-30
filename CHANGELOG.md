@@ -2,6 +2,8 @@
 
 ## 0.4.5 (unreleased)
 
+Measured on GPT-5.4 with one repair round: first attempt validity 56% (48% in v0.4.4), no false positives, every residual in range; validity after repair 91% (95%). An earlier round and its fixes are in `evals/archive/0.4.5-pre/`.
+
 Rubric 0.3.3. Schema 0.6.2. Aligns two credit rules with what runs on every model kept concluding.
 
 ### Changed

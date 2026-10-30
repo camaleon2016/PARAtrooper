@@ -5,7 +5,7 @@ sys.path[:0] = ["skills/para/scripts", "evals"]
 import run_consistency as rc
 from validate import DEFAULT_SCHEMA
 schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8-sig"))
-PAIRS = [("GPT-5.4 with repair", "evals/runs-gpt-54-v041-repair", "evals/runs-gpt-54-v042"),
+PAIRS = [("GPT-5.4 with repair", "evals/runs-gpt-54-v044", "evals/runs-gpt-54-v045"),
          ("Claude", "evals/runs-claude-v040", "evals/runs-claude-v042"),
          ("Gemini", None, "evals/runs-gemini-v042")]
 def stats(folder, case):

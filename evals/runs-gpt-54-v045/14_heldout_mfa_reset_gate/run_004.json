@@ -1,0 +1,786 @@
+{
+  "schema_version": "0.6.2",
+  "assessment": {
+    "assessment_id": "14_heldout_mfa_reset_gate-run004",
+    "assessed_at": "2026-10-29T03:33:39Z",
+    "assessor": {
+      "kind": "skill",
+      "version": "0.4.5",
+      "rubric_version": "0.3.3",
+      "model": "gpt-5.4"
+    },
+    "evidence_basis": "declared",
+    "source_artifacts": [
+      {
+        "artifact_type": "system_prompt",
+        "locator": "prompt.md"
+      },
+      {
+        "artifact_type": "runtime_config",
+        "locator": "runtime notes"
+      },
+      {
+        "artifact_type": "other",
+        "locator": "approval queue"
+      }
+    ],
+    "assessment_reason": "on_request"
+  },
+  "subject": {
+    "agent_id": "helpdesk-agent",
+    "name": "helpdesk-agent",
+    "trust_domain": "first_party"
+  },
+  "capabilities": [
+    {
+      "capability_id": "cap.user_read",
+      "action": "read",
+      "target": "directory profile and group memberships",
+      "reversibility": "reversible",
+      "data_sensitivity": "confidential",
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.mfa_reset",
+      "action": "configure",
+      "target": "user MFA methods and temporary access pass issuance",
+      "reversibility": "partially_reversible",
+      "data_sensitivity": "confidential",
+      "approval_gate_ref": "ctl.analyst_approval",
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    },
+    {
+      "capability_id": "cap.send_temp_pass",
+      "action": "send_external",
+      "target": "chat message to ticket requester containing temporary access pass",
+      "reversibility": "irreversible",
+      "data_sensitivity": "restricted",
+      "is_egress": true,
+      "credential_scope": "shared_service_account",
+      "maestro_layer": "L7_agent_ecosystem"
+    }
+  ],
+  "inputs": [
+    {
+      "input_id": "in.ticket",
+      "source": "support tickets, including tickets emailed in by contractors and vendors",
+      "trust_level": "untrusted",
+      "reaches_capabilities": [
+        "cap.user_read",
+        "cap.mfa_reset",
+        "cap.send_temp_pass"
+      ]
+    }
+  ],
+  "autonomy": {
+    "level": "A2_act_with_approval_on_sensitive",
+    "max_unattended_steps": 3,
+    "max_runtime_minutes": 10,
+    "can_spawn_agents": false,
+    "can_modify_own_config": false
+  },
+  "instructions": [
+    {
+      "issue": "implied_authority",
+      "evidence_locator": "prompt.md:1-3",
+      "severity": "moderate",
+      "note": "The prompt directs the agent to reset MFA and send the temporary pass to the ticket opener, treating the requester field as sufficient authority."
+    },
+    {
+      "issue": "safety_by_instruction_only",
+      "evidence_locator": "prompt.md:3",
+      "severity": "moderate",
+      "note": "The design relies on analyst approval for reset execution, but the prompt and artifacts show no structural recipient binding for delivery of the temporary pass."
+    }
+  ],
+  "elements": [
+    {
+      "element_id": "helpdesk-agent",
+      "kind": "process",
+      "name": "helpdesk-agent",
+      "refs": [
+        "helpdesk-agent"
+      ]
+    },
+    {
+      "element_id": "ext.ticket_requester",
+      "kind": "external_entity",
+      "name": "ticket requester / email sender",
+      "refs": [
+        "in.ticket"
+      ]
+    },
+    {
+      "element_id": "flow.in.ticket",
+      "kind": "data_flow",
+      "name": "support ticket into helpdesk-agent",
+      "refs": [
+        "in.ticket"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "flow.cap.send_temp_pass",
+      "kind": "data_flow",
+      "name": "temporary pass sent to ticket requester",
+      "refs": [
+        "cap.send_temp_pass"
+      ],
+      "crosses_boundary": true
+    },
+    {
+      "element_id": "store.approval_queue",
+      "kind": "data_store",
+      "name": "service desk analyst approval queue",
+      "refs": [
+        "ctl.analyst_approval"
+      ]
+    },
+    {
+      "element_id": "store.idp_config",
+      "kind": "data_store",
+      "name": "identity provider MFA state",
+      "refs": [
+        "cap.mfa_reset",
+        "cap.user_read"
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "control_id": "ctl.analyst_approval",
+      "name": "Service desk analyst approval in queue tool",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "The approval gate is enforced outside the model, but its effectiveness is reduced by high review volume and routine benign traffic; rubric step 2 uses volume to limit credit rather than changing dependence.",
+      "covers": [
+        "cap.mfa_reset"
+      ],
+      "status": "declared",
+      "maestro_layer": "L6_security_compliance",
+      "owner": "service desk",
+      "approval_review_mode": "raw_action",
+      "approval_volume": "high",
+      "constrains_sink": false
+    },
+    {
+      "control_id": "ctl.recipient_binding_missing",
+      "name": "Recipient confirmation bound to account owner for temporary pass delivery",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Would bind destination to the system of record rather than the ticket sender, preventing delivery of a temporary pass to an attacker-controlled requester.",
+      "covers": [
+        "cap.send_temp_pass"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.identity_verification_missing",
+      "name": "Out-of-band identity verification before MFA reset",
+      "category": "preventive",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Would require proof that the requester is the account owner before reset, reducing confused deputy abuse and unauthorized credential recovery.",
+      "covers": [
+        "cap.mfa_reset",
+        "cap.send_temp_pass"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L6_security_compliance",
+      "constrains_sink": true
+    },
+    {
+      "control_id": "ctl.agent_action_audit_missing",
+      "name": "Attributable audit record separating agent actions from requester identity",
+      "category": "detective",
+      "mechanism": "structural",
+      "capability_dependence": "independent",
+      "decay_rationale": "Would restore attributable provenance for sensitive recovery actions and delivery of temporary passes.",
+      "covers": [
+        "cap.mfa_reset",
+        "cap.send_temp_pass"
+      ],
+      "status": "missing_recommended",
+      "maestro_layer": "L5_evaluation_observability",
+      "restores_property": true
+    }
+  ],
+  "findings": [
+    {
+      "finding_id": "f1",
+      "title": "Confused deputy MFA takeover: untrusted ticket can trigger reset and send temporary pass to requester",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.ticket",
+          "note": "Contractors and vendors can email tickets in; requester is the email sender."
+        },
+        {
+          "ref": "cap.user_read",
+          "note": "Agent looks up directory profile and group memberships for the named user."
+        },
+        {
+          "ref": "cap.mfa_reset",
+          "note": "Agent resets MFA after analyst approval."
+        },
+        {
+          "ref": "cap.send_temp_pass",
+          "note": "Temporary pass is posted to whoever opened the ticket rather than the account owner."
+        }
+      ],
+      "toxic_combination": [
+        "in.ticket",
+        "cap.user_read",
+        "cap.mfa_reset",
+        "cap.send_temp_pass",
+        "ctl.analyst_approval"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI02",
+          "name": "Tool Misuse and Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0083",
+          "name": "Credentials from AI Agent Configuration",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0086",
+          "name": "Exfiltration via AI Agent Tool Invocation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAF_MCP",
+          "id": "SAFE-T1307",
+          "name": "Confused Deputy Attack",
+          "framework_edition": "SAF-MCP-skill@62e85d5"
+        },
+        {
+          "framework": "SAF_MCP",
+          "id": "SAFE-T1911",
+          "name": "Parameter Exfiltration",
+          "framework_edition": "SAF-MCP-skill@62e85d5"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "critical",
+      "residual_rationale": "The wired approval gate only covers cap.mfa_reset, not the full attack outcome. Because the queue volume is about 400 approvals per shift across two analysts and the action shown to reviewers still treats the ticket requester as the delivery recipient, the gate does not meaningfully reduce the reachable S3 outcome of account takeover by sending the temporary pass to an attacker-controlled requester.",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal",
+          "model_upgrade"
+        ],
+        "failing_controls": [
+          "ctl.analyst_approval"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Approval gate removed or narrowed, or queue throughput per analyst rises further, or model version changes without review."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:1-3",
+          "observation": "The prompt tells the agent to look up the user, reset MFA, and send the temporary access pass to the person who opened the ticket."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Contractors and vendors can email tickets in, and the requester field is the email sender, so the source is untrusted."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "The temporary pass goes to whoever opened the ticket, not to the account owner."
+        },
+        {
+          "locator": "approval queue",
+          "observation": "The analyst sees the exact target account, the requester, and the full ticket body for reset approval."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Two analysts approve about 400 requests per shift and most are routine, indicating high approval volume and fatigue risk."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Bind temporary pass delivery to a verified account-owner destination from the identity system of record instead of the ticket requester field.",
+          "priority": "p1",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-6"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Require out-of-band identity verification before executing MFA reset or releasing a temporary pass.",
+          "priority": "p1",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.6",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "IA-2"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        },
+        {
+          "category": "corrective",
+          "mechanism": "behavioral",
+          "action": "Update the prompt so the agent never treats the ticket opener as the authoritative recipient for credential recovery material.",
+          "priority": "p2",
+          "audience": "developer",
+          "governance_refs": [
+            {
+              "framework": "NIST_AI_RMF",
+              "id": "MEASURE 2.7",
+              "framework_edition": "1.0"
+            }
+          ],
+          "rmf_function": "MEASURE"
+        }
+      ],
+      "stride": [
+        "spoofing",
+        "information_disclosure",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "autonomy_abuse"
+      ],
+      "maestro_layers": [
+        "L6_security_compliance",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MEASURE 2.7",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "6.1.2",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "likely",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f2",
+      "title": "High-volume analyst approval gate is vulnerable to consent fatigue on sensitive MFA resets",
+      "horizon": "present",
+      "finding_kind": "path",
+      "attack_path": [
+        {
+          "ref": "in.ticket",
+          "note": "Untrusted requester can submit routine-looking reset request."
+        },
+        {
+          "ref": "ctl.analyst_approval",
+          "note": "Analysts review exact target and requester, but at very high routine volume."
+        },
+        {
+          "ref": "cap.mfa_reset",
+          "note": "Approved reset removes existing MFA methods and issues a temporary pass."
+        }
+      ],
+      "toxic_combination": [
+        "in.ticket",
+        "ctl.analyst_approval",
+        "cap.mfa_reset"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI03",
+          "name": "Identity and Privilege Abuse",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "MITRE_ATLAS",
+          "id": "AML.T0067",
+          "name": "LLM Trusted Output Components Manipulation",
+          "framework_edition": "2026.09"
+        },
+        {
+          "framework": "SAF_MCP",
+          "id": "SAFE-T1403",
+          "name": "Consent-Fatigue Exploit",
+          "framework_edition": "SAF-MCP-skill@62e85d5"
+        }
+      ],
+      "inherent_risk": "critical",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "autonomy_increase",
+          "control_removal",
+          "longer_task_horizon"
+        ],
+        "failing_controls": [
+          "ctl.analyst_approval"
+        ],
+        "projected_risk": "critical",
+        "watch_signal": "Approval requests per analyst per day remain high or rise, or approval is converted from per-reset review to remembered/session approval."
+      },
+      "confidence": "high",
+      "evidence": [
+        {
+          "locator": "prompt.md:3",
+          "observation": "Every reset needs analyst approval in the queue tool before it runs."
+        },
+        {
+          "locator": "approval queue",
+          "observation": "The analyst sees raw action details including target account, requester, and full ticket body."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Two analysts approve about 400 requests per shift and most are routine, so approval volume is high."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "preventive",
+          "mechanism": "structural",
+          "action": "Reduce sensitive reset approvals per analyst with stronger prefilters and staffing, or require secondary review for high-risk resets such as requester/account-owner mismatch.",
+          "priority": "p1",
+          "audience": "reviewer",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.8",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AC-5"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "repudiation",
+        "elevation_of_privilege"
+      ],
+      "agentic_class": [
+        "human_trust_exploitation"
+      ],
+      "maestro_layers": [
+        "L6_security_compliance",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "NIST_AI_RMF",
+          "id": "MAP 3.5",
+          "framework_edition": "1.0"
+        },
+        {
+          "framework": "ISO_42001",
+          "id": "A.8",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "severe",
+      "treatment": {
+        "option": "pending"
+      }
+    },
+    {
+      "finding_id": "f3",
+      "title": "Missing attributable audit record for credential recovery actions",
+      "horizon": "present",
+      "finding_kind": "property",
+      "affected_refs": [
+        "cap.mfa_reset",
+        "cap.send_temp_pass"
+      ],
+      "threat_refs": [
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI09",
+          "name": "Human-Agent Trust Exploitation",
+          "framework_edition": "2026"
+        },
+        {
+          "framework": "OWASP_AGENTIC",
+          "id": "ASI10",
+          "name": "Rogue Agents",
+          "framework_edition": "2026"
+        }
+      ],
+      "inherent_risk": "high",
+      "residual_risk": "high",
+      "forecast": {
+        "triggers": [
+          "control_removal",
+          "autonomy_increase",
+          "model_upgrade"
+        ],
+        "failing_controls": [],
+        "projected_risk": "high",
+        "watch_signal": "No attributable agent-action log is described for resets and pass delivery; reassess if recovery workflow autonomy or scope increases."
+      },
+      "confidence": "medium",
+      "evidence": [
+        {
+          "locator": "artifacts",
+          "observation": "The design describes an approval queue view but does not describe a tamper-evident audit record that separates agent actions from requester identity for reset and pass delivery events."
+        },
+        {
+          "locator": "runtime notes",
+          "observation": "Sensitive recovery actions include MFA reset and sending a temporary pass outside the trust boundary."
+        }
+      ],
+      "recommendations": [
+        {
+          "category": "detective",
+          "mechanism": "structural",
+          "action": "Record tamper-evident, attributable logs for each reset and temporary pass delivery, including requester identity, verified account owner, analyst approver, destination, and agent action id.",
+          "priority": "p2",
+          "audience": "both",
+          "governance_refs": [
+            {
+              "framework": "ISO_42001",
+              "id": "A.6.2.4",
+              "framework_edition": "2023"
+            },
+            {
+              "framework": "NIST_SP_800_53",
+              "id": "AU-10"
+            }
+          ],
+          "rmf_function": "MANAGE"
+        }
+      ],
+      "stride": [
+        "repudiation"
+      ],
+      "agentic_class": [],
+      "maestro_layers": [
+        "L5_evaluation_observability",
+        "L7_agent_ecosystem"
+      ],
+      "governance_refs": [
+        {
+          "framework": "ISO_42001",
+          "id": "8.2",
+          "framework_edition": "2023"
+        }
+      ],
+      "likelihood": "possible",
+      "consequence": "major",
+      "treatment": {
+        "option": "pending"
+      }
+    }
+  ],
+  "stride_coverage": [
+    {
+      "element_id": "helpdesk-agent",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "f1"
+      ]
+    },
+    {
+      "element_id": "helpdesk-agent",
+      "category": "tampering",
+      "status": "not_applicable",
+      "rationale": "The provided artifacts do not describe self-modification, mutable tool definitions, or writable agent configuration for this agent design."
+    },
+    {
+      "element_id": "helpdesk-agent",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "f2",
+        "f3"
+      ]
+    },
+    {
+      "element_id": "helpdesk-agent",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f1"
+      ]
+    },
+    {
+      "element_id": "helpdesk-agent",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The artifacts show bounded steps and no spend loop, recursive delegation, or long-running unattended execution path in this design."
+    },
+    {
+      "element_id": "helpdesk-agent",
+      "category": "elevation_of_privilege",
+      "status": "finding",
+      "finding_ids": [
+        "f1",
+        "f2"
+      ]
+    },
+    {
+      "element_id": "ext.ticket_requester",
+      "category": "spoofing",
+      "status": "finding",
+      "finding_ids": [
+        "f1"
+      ]
+    },
+    {
+      "element_id": "ext.ticket_requester",
+      "category": "repudiation",
+      "status": "finding",
+      "finding_ids": [
+        "f3"
+      ]
+    },
+    {
+      "element_id": "flow.in.ticket",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f1"
+      ]
+    },
+    {
+      "element_id": "flow.in.ticket",
+      "category": "information_disclosure",
+      "status": "mitigated",
+      "control_ids": [
+        "ctl.analyst_approval"
+      ]
+    },
+    {
+      "element_id": "flow.in.ticket",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The ticket ingress flow itself is not described as carrying workload amplification beyond ordinary queue processing in the supplied design."
+    },
+    {
+      "element_id": "flow.cap.send_temp_pass",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f1"
+      ]
+    },
+    {
+      "element_id": "flow.cap.send_temp_pass",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f1"
+      ]
+    },
+    {
+      "element_id": "flow.cap.send_temp_pass",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "This outbound flow is a single temporary pass message; the artifacts do not describe volume abuse or service exhaustion on this channel."
+    },
+    {
+      "element_id": "store.approval_queue",
+      "category": "tampering",
+      "status": "not_assessed",
+      "rationale": "The artifacts describe what the queue shows to analysts, but not integrity protections, edit controls, or whether queue records are tamper evident."
+    },
+    {
+      "element_id": "store.approval_queue",
+      "category": "information_disclosure",
+      "status": "not_assessed",
+      "rationale": "The artifacts do not state access controls or retention for ticket bodies and target-account details stored in the approval queue."
+    },
+    {
+      "element_id": "store.approval_queue",
+      "category": "denial_of_service",
+      "status": "finding",
+      "finding_ids": [
+        "f2"
+      ]
+    },
+    {
+      "element_id": "store.idp_config",
+      "category": "tampering",
+      "status": "finding",
+      "finding_ids": [
+        "f1",
+        "f2"
+      ]
+    },
+    {
+      "element_id": "store.idp_config",
+      "category": "information_disclosure",
+      "status": "finding",
+      "finding_ids": [
+        "f1"
+      ]
+    },
+    {
+      "element_id": "store.idp_config",
+      "category": "denial_of_service",
+      "status": "not_applicable",
+      "rationale": "The supplied design does not describe repeated reset loops or store saturation effects against the identity provider state itself."
+    }
+  ],
+  "rating": {
+    "inherent": "critical",
+    "residual": "critical",
+    "forecast": "critical",
+    "rationale": "Manual validation only; scripts could not be run in this environment. Present inherent risk is critical because an untrusted ticket reaches S3 capabilities: MFA reset under shared service authority and irreversible delivery of a temporary pass to the ticket requester. Residual remains critical because the only declared preventive control is a high-volume raw-action approval gate on cap.mfa_reset, and the design still sends the temporary pass to whoever opened the ticket rather than a verified account owner. Forecast remains critical because removal or weakening of the approval gate does not create the main weakness; the core design flaw is missing structural recipient binding and identity verification."
+  },
+  "limitations": [
+    "This assessment reflects the declared design and configuration in the provided artifacts, not observed runtime behavior.",
+    "No source code, tool manifest, or identity-provider configuration was provided, so capability scope and logging details are assessed from prompt and runtime notes only.",
+    "No explicit audit logging design was supplied; the property finding on attributable records is based on absence in the provided artifacts and therefore has medium confidence."
+  ]
+}
